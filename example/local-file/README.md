@@ -8,11 +8,16 @@
 
 ```bash
 uv build --wheel
+if [ -f example/local-file/uv.lock ]; then
+    lock_backup=$(mktemp /private/tmp/xxautoenv-local-file-uv.lock.XXXXXX)
+    mv example/local-file/uv.lock "$lock_backup"
+    printf 'Previous lock: %s\n' "$lock_backup"
+fi
 uv lock --project example/local-file
 uv sync --locked --project example/local-file
 ```
 
-首次准备可能需要联网取得构建依赖、SpiffWorkflow 和 lxml 的平台 wheel。示例依赖显式指向 `dist/xxautoenv-0.1.0-py3-none-any.whl`；缺少该文件时先构建，示例不会从索引下载 xxautoenv。重建 wheel 后重新执行上述锁定和同步命令。
+首次准备可能需要联网取得构建依赖、SpiffWorkflow 和 lxml 的平台 wheel。示例依赖显式指向 `dist/xxautoenv-0.1.0-py3-none-any.whl`；缺少该文件时先构建，示例不会从索引下载 xxautoenv。重建同名 wheel 后重新执行上述备份、锁定和同步命令；直接更新已有锁文件可能保留旧 wheel 摘要。备份位置由命令输出，重新生成的锁文件记录实际 wheel 摘要。
 
 ## 执行
 

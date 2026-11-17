@@ -11,6 +11,7 @@ from xxautoenv.contracts import (
 )
 from xxautoenv.runner import run
 from xxautoenv.nodes.check import check_node
+from xxautoenv.nodes.function import action_node
 from xxautoenv.terminal import Terminal
 
 
@@ -130,3 +131,50 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(report.status, RunStatus.FAILED)
         self.assertIsInstance(report.steps[0].diagnostic.error, ContractError)
         self.assertEqual(self.reached, [])
+
+    def test_acceptance_change_after_passed_check_is_rejected_before_approval(self):
+        class ApprovalInput(io.StringIO):
+            def isatty(self):
+                return True
+
+        for auto_approve in (False, True):
+            with self.subTest(auto_approve=auto_approve):
+                self.spec = WorkflowSpec(addstart=True)
+                target = {'acceptable': True}
+                reached = []
+                answers = ApprovalInput('y\n')
+                terminal = Terminal(answers, self.out, self.err)
+
+                def verify():
+                    reached.append('verify')
+                    verdict = CheckVerdict.PASSED if target['acceptable'] else CheckVerdict.NOT_PASSED
+                    return CheckResult(verdict, 'Target observed')
+
+                def change():
+                    reached.append('change')
+                    target['acceptable'] = False
+                    return NodeResult(NodeStatus.SUCCESS, None, 'Target changed')
+
+                first = self.node('verify', verify)
+                changing = action_node(
+                    self.spec, 'change', name='Change', purpose='Change verified target',
+                    stage=Stage.ACCEPTANCE, inputs={}, output='changed',
+                    prepare=lambda: Action('Write target', (ActionScope('write', 'target'),), change, True),
+                    allows=lambda scope: True,
+                )
+                self.spec.start.connect(first)
+                first.connect(changing)
+                report = run(self.spec, auto_approve=auto_approve, terminal=terminal)
+
+                self.assertEqual(report.status, RunStatus.FAILED,
+                                 f'{report.status.value=}, {target=}, {reached=}')
+                self.assertEqual(report.exit_code, 1)
+                self.assertEqual([check.verdict for check in report.checks], [CheckVerdict.PASSED])
+                self.assertTrue(target['acceptable'])
+                self.assertEqual(reached, ['verify'])
+                self.assertEqual(answers.tell(), 0)
+                self.assertIsNone(report.steps[1].result)
+                diagnostic = report.steps[1].diagnostic
+                self.assertIsInstance(diagnostic.error, ContractError)
+                self.assertEqual(diagnostic.node_id, 'change')
+                self.assertEqual(diagnostic.stage, Stage.ACCEPTANCE)

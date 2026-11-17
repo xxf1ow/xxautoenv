@@ -16,6 +16,7 @@ from .contracts import (
     NodeResult,
     NodeStatus,
     Ref,
+    Stage,
 )
 
 
@@ -142,8 +143,10 @@ class DeploymentNode(Simple):
             raise
 
     def _validate_action(self, action: Action) -> None:
-        if getattr(self, "_is_check", False) and action.changes:
-            raise ContractError(f"Check {self.declaration.id!r} cannot execute a changing Action")
+        if self.declaration.stage is Stage.ACCEPTANCE and action.changes:
+            raise ContractError(
+                f"Node {self.declaration.id!r} in acceptance cannot execute a changing Action"
+            )
         if not action.changes and action.scope:
             raise ContractError(f"Node {self.declaration.id!r} read-only Action must have empty scope")
         if action.changes and not action.scope:
