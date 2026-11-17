@@ -9,7 +9,7 @@
 ```bash
 uv build --wheel
 if [ -f example/local-file/uv.lock ]; then
-    lock_backup=$(mktemp /private/tmp/xxautoenv-local-file-uv.lock.XXXXXX)
+    lock_backup=$(mktemp "${TMPDIR:-/tmp}/xxautoenv-local-file-uv.lock.XXXXXX")
     mv example/local-file/uv.lock "$lock_backup"
     printf 'Previous lock: %s\n' "$lock_backup"
 fi
