@@ -78,3 +78,45 @@ class NodeDeclaration:
     stage: Stage
     inputs: Mapping[str, object | Ref]
     output: str
+
+
+class StepDisposition(Enum):
+    """Report-only classification derived after native execution stops."""
+
+    EXECUTED = "executed"
+    NOT_SELECTED = "not_selected"
+    NOT_EXECUTED = "not_executed"
+    PENDING = "pending"
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    node_id: str
+    stage: Stage
+    error: BaseException
+    traceback: str
+
+
+@dataclass(frozen=True)
+class StepReport:
+    declaration: NodeDeclaration
+    result: NodeResult | None
+    diagnostic: Diagnostic | None
+    disposition: StepDisposition
+
+
+@dataclass(frozen=True)
+class RunReport:
+    status: RunStatus
+    steps: tuple[StepReport, ...]
+    checks: tuple[CheckResult, ...]
+
+    @property
+    def exit_code(self) -> int:
+        """Map success, failure, refusal, and keyboard interruption to CLI exits."""
+        return {
+            RunStatus.SUCCESS: 0,
+            RunStatus.FAILED: 1,
+            RunStatus.CANCELLED: 2,
+            RunStatus.INTERRUPTED: 130,
+        }[self.status]

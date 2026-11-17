@@ -87,13 +87,17 @@ SSH、pyinfra、OpenTofu 节点、下游设计 skill 和 PyPI 发布设施不进
 
 框架执行状态、业务产出和运行结论承担不同职责。SpiffWorkflow 负责推进；节点产出记录完成了什么及其数据；运行结论归纳是否达到消费方的安装要求。报告保存结果证据，不反向成为另一套调度状态或步骤进度账本。
 
+步骤报告使用不可变的 `StepReport(declaration: NodeDeclaration, result: NodeResult | None, diagnostic: Diagnostic | None, disposition: StepDisposition)`。`disposition` 在运行停止后根据原生任务与路径事实汇总：`EXECUTED` 表示步骤已实际经过，包括业务跳过、拒绝、失败或中断；`NOT_SELECTED` 表示已确定没有选中的分支；`NOT_EXECUTED` 表示已确定路径上尚未执行的步骤；`PENDING` 表示路由尚未确定。后三类不伪造业务 `NodeResult`；分类仅供报告与展示，不参与调度。
+
+`Diagnostic(node_id: str, stage: Stage, error: BaseException, traceback: str)` 保存原始异常及完整原因链。`RunReport(status: RunStatus, steps: tuple[StepReport, ...], checks: tuple[CheckResult, ...])` 汇总本次原生 Workflow 的证据；每次调用运行入口都新建 Workflow 并重新绑定交互能力，不复用输入、结果或阶段状态。
+
 普通步骤的准备或执行异常立即停止后续流程。保留原始异常原因链、失败阶段和节点、具体操作、命令、输出及已完成工作，不用通用错误消息替换底层原因。取消和中断分别报告，不捕获后伪装成正常完成。
 
 不设计敏感信息隐藏机制：不增加脱敏、关键词识别、敏感字段标记、输出过滤或独立密码隐藏策略。节点决定输出哪些信息，运行时直接展示信息、命令输出和错误详情。输出展示不是要求把所有配置值或任意对象自动打印出来。
 
 ### 收尾核查
 
-收尾核查由消费者定义多个独立的只读检查项。核查动作成功执行可返回“不通过”的业务结论；这不是框架执行错误。正常核查及已经报告的普通核查异常都可以让 SpiffWorkflow 节点正常完成，使后续独立核查继续执行。
+核查工厂在原生部署节点上设置内部 `_is_check` 标记，供图校验与结果汇总识别核查；`DeploymentNode` 的公开构造参数不增加核查开关。收尾核查由消费者定义多个独立的只读检查项。核查动作成功执行可返回“不通过”的业务结论；这不是框架执行错误。正常核查及已经报告的普通核查异常都可以让 SpiffWorkflow 节点正常完成，使后续独立核查继续执行。
 
 | 核查情况 | 对外报告 | 后续处理 |
 |---|---|---|

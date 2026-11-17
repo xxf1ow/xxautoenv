@@ -53,6 +53,8 @@ class DeploymentNode(Simple):
         *,
         allows: Callable[[ActionScope], bool] = _read_only,
     ):
+        if declaration.id in spec.task_specs:
+            raise ContractError(f"Duplicate node identifier {declaration.id!r}")
         super().__init__(spec, declaration.id)
         self.declaration = declaration
         self.prepare = prepare
