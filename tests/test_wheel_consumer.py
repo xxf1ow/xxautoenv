@@ -27,7 +27,7 @@ class WheelConsumerTests(unittest.TestCase):
             self.assertFalse(root.is_relative_to(ROOT))
             consumer = root / 'consumer'
             shutil.copytree(ROOT / 'example' / 'local-file', consumer,
-                            ignore=shutil.ignore_patterns('.venv', '__pycache__'))
+                            ignore=shutil.ignore_patterns('.venv', '__pycache__', '.tmp'))
             dependency = consumer / 'vendor'
             dependency.mkdir()
             shutil.copy2(WHEEL, dependency / WHEEL.name)
@@ -62,12 +62,12 @@ class WheelConsumerTests(unittest.TestCase):
             self.assertFalse(location.is_relative_to(ROOT))
             target = root / 'target'
             first = command(str(python), 'deploy.py', '--target-dir', str(target), '-y')
-            self.assertIn('[success] Deliver file:', first.stdout)
+            self.assertIn('步骤（4） [完成] 已交付文件', first.stdout)
             self.assertEqual((target / 'message.txt').read_text(), 'Hello from xxautoenv.\n')
             self.assertEqual((target / 'message.txt').stat().st_mode & 0o777, 0o644)
             second = command(str(python), 'deploy.py', '--target-dir', str(target))
-            self.assertIn('[skipped] Reuse file:', second.stdout)
-            self.assertEqual(second.stdout.count('[passed]'), 2)
+            self.assertIn('步骤（5） [跳过]', second.stdout)
+            self.assertEqual(second.stdout.count('[完成；通过]'), 2)
             blocked = command(str(python), '-c', '''
 import runpy
 import socket
@@ -82,8 +82,8 @@ socket.getaddrinfo = blocked
 sys.argv = ['deploy.py', '--target-dir', sys.argv[1], '-y']
 runpy.run_path('deploy.py', run_name='__main__')
 ''', str(root / 'socket-blocked-target'))
-            self.assertIn('Deployment: success', blocked.stdout)
-            self.assertEqual(blocked.stdout.count('[passed]'), 2)
+            self.assertIn('部署：成功', blocked.stdout)
+            self.assertEqual(blocked.stdout.count('[完成；通过]'), 2)
 
 
 if __name__ == '__main__':

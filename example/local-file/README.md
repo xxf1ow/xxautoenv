@@ -17,7 +17,7 @@ uv lock --project example/local-file
 uv sync --locked --project example/local-file
 ```
 
-首次准备可能需要联网取得构建依赖、SpiffWorkflow 和 lxml 的平台 wheel。示例依赖显式指向 `dist/xxautoenv-0.1.0-py3-none-any.whl`；缺少该文件时先构建，示例不会从索引下载 xxautoenv。重建同名 wheel 后重新执行上述备份、锁定和同步命令；直接更新已有锁文件可能保留旧 wheel 摘要。备份位置由命令输出，重新生成的锁文件记录实际 wheel 摘要。
+首次准备可能需要联网取得构建依赖、SpiffWorkflow、Rich 和 lxml 的平台 wheel。示例依赖显式指向 `dist/xxautoenv-0.1.0-py3-none-any.whl`；缺少该文件时先构建，示例不会从索引下载 xxautoenv。重建同名 wheel 后重新执行上述备份、锁定和同步命令；直接更新已有锁文件可能保留旧 wheel 摘要。备份位置由命令输出，重新生成的锁文件记录实际 wheel 摘要。
 
 ## 执行
 
@@ -34,7 +34,7 @@ cd example/local-file
 .venv/bin/python deploy.py
 ```
 
-来源相对 `deploy.py` 定位。目标目录可以不存在，创建目录包含在同一次待批准动作中。终端显示 guidance、execution、acceptance 三个阶段和步骤结果。首次运行交付文件；再次运行显示 `Reuse file` 跳过，并分别报告 `Content check` 与 `Permission check` 的通过结论。
+来源相对 `deploy.py` 定位。目标目录可以不存在，创建目录包含在同一次待批准动作中。终端显示配置引导、执行、最终验收三个阶段。每阶段的四列表列出说明、允许动作及真实准备状态；交付前的只读观察显示“已探测”，动作显示“就绪”，尚缺输入的步骤保持待定。每个实际步骤随后按编号输出一次结果。首次运行交付文件；再次运行的计划显示复用“无需变更”，对应步骤报告跳过，两项核查均报告“完成；通过”。
 
 成功退出码为 0，失败为 1，拒绝为 2，中断为 130。符号链接或非普通目标文件会报错并停止；审批期间来源或目标发生变化也会失败。核查不通过或无法判定使整体失败，其他独立核查仍继续；普通执行失败则停止后续步骤。
 

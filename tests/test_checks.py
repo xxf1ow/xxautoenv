@@ -51,13 +51,15 @@ class CheckTests(unittest.TestCase):
                 task = next(task for task in captured[0].get_tasks() if task.task_spec is first)
                 self.assertEqual(task.state, TaskState.COMPLETED)
                 self.assertEqual(report.steps[0].result.status, NodeStatus.SUCCESS)
-                self.assertIn(f'[{verdict.value}]', self.out.getvalue())
-                self.assertIn(f'Deployment: {status.value}', self.out.getvalue())
+                self.assertIn('[完成；通过]' if verdict is CheckVerdict.PASSED else '[完成；不通过]', self.out.getvalue())
+                self.assertIn('部署：成功' if status is RunStatus.SUCCESS else '部署：失败', self.out.getvalue())
 
     def test_ordinary_prepare_and_execute_errors_are_indeterminate_and_continue(self):
         for during_prepare in (True, False):
             with self.subTest(during_prepare=during_prepare):
                 self.spec = WorkflowSpec(addstart=True)
+                self.out.seek(0)
+                self.out.truncate()
                 self.reached = []
                 cause = OSError('file unavailable')
                 failure = ValueError('cannot determine content')
@@ -85,8 +87,9 @@ class CheckTests(unittest.TestCase):
                 self.assertIs(report.steps[0].diagnostic.error.__cause__, cause)
                 self.assertIn('file unavailable', self.err.getvalue())
                 self.assertIn('cannot determine content', self.err.getvalue())
-                self.assertIn('[indeterminate]', self.out.getvalue())
-                self.assertIn('Deployment: failed', self.out.getvalue())
+                expected = '[准备异常；无法判定]' if during_prepare else '[完成；无法判定]'
+                self.assertEqual(self.out.getvalue().count('步骤（1） ' + expected), 1)
+                self.assertIn('部署：失败', self.out.getvalue())
                 task = next(task for task in captured[0].get_tasks() if task.task_spec is first)
                 self.assertEqual(task.state, TaskState.COMPLETED)
                 self.assertEqual(report.steps[0].result.status, NodeStatus.SUCCESS)
@@ -132,7 +135,7 @@ class CheckTests(unittest.TestCase):
         self.assertIsInstance(report.steps[0].diagnostic.error, ContractError)
         self.assertEqual(self.reached, [])
 
-    def test_acceptance_change_after_passed_check_is_rejected_before_approval(self):
+    def test_acceptance_change_is_rejected_during_preparation_before_checks_or_approval(self):
         class ApprovalInput(io.StringIO):
             def isatty(self):
                 return True
@@ -169,9 +172,9 @@ class CheckTests(unittest.TestCase):
                 self.assertEqual(report.status, RunStatus.FAILED,
                                  f'{report.status.value=}, {target=}, {reached=}')
                 self.assertEqual(report.exit_code, 1)
-                self.assertEqual([check.verdict for check in report.checks], [CheckVerdict.PASSED])
+                self.assertEqual(report.checks, ())
                 self.assertTrue(target['acceptable'])
-                self.assertEqual(reached, ['verify'])
+                self.assertEqual(reached, [])
                 self.assertEqual(answers.tell(), 0)
                 self.assertIsNone(report.steps[1].result)
                 diagnostic = report.steps[1].diagnostic

@@ -29,17 +29,17 @@ def input_node(
     never supplies configuration answers.
     """
     if set(inputs) - {'value'}:
-        raise ContractError(f'Input node {id!r} accepts only the value input')
+        raise ContractError(f'输入节点 {id!r} 只接受 value 输入')
     declaration = NodeDeclaration(id, name, purpose, stage, dict(inputs), output)
 
     def prepare(value: object = None) -> Action:
         if value is not None and not isinstance(value, str):
-            raise ContractError(f'Input node {id!r} requires a string or None')
+            raise ContractError(f'输入节点 {id!r} 要求字符串或 None')
 
         def execute() -> NodeResult:
             services = node.services
             if services is None:
-                raise ContractError(f'Input node {id!r} has no bound RunServices')
+                raise ContractError(f'输入节点 {id!r} 尚未绑定 RunServices')
             answer = value
             while True:
                 if answer is None:
@@ -50,7 +50,7 @@ def input_node(
                     services.stderr(f'{error}\n')
                     answer = None
                     continue
-                return NodeResult(NodeStatus.SUCCESS, normalized, 'Configuration accepted')
+                return NodeResult(NodeStatus.SUCCESS, normalized, '配置已接受')
 
         return Action(purpose, (), execute)
 

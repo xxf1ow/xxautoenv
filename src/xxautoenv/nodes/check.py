@@ -30,14 +30,14 @@ def check_node(
     cannot declare changes; consumers remain responsible for read-only functions.
     """
     if stage is not Stage.ACCEPTANCE:
-        raise ContractError(f'Check {id!r} must use the acceptance stage')
+        raise ContractError(f'核查 {id!r} 必须位于 acceptance 阶段')
     declaration = NodeDeclaration(id, name, purpose, stage, dict(inputs), output)
 
     def prepare(**values: object) -> Action:
         def execute() -> NodeResult:
             result = check(**values)
             if not isinstance(result, CheckResult) or not isinstance(result.verdict, CheckVerdict):
-                raise ContractError(f'Check {id!r} must return CheckResult with a CheckVerdict')
+                raise ContractError(f'核查 {id!r} 必须返回包含 CheckVerdict 的 CheckResult')
             return NodeResult(NodeStatus.SUCCESS, result, result.summary)
 
         return Action(purpose, (), execute)

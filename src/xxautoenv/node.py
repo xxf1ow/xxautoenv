@@ -31,6 +31,13 @@ class RunServices(Protocol):
     def stderr(self, text: str) -> None: ...
 
 
+class _PlanBoundary(BaseException):
+    """Pause before execution without SpiffWorkflow marking the task ERROR."""
+
+    def __init__(self, task):
+        self.task = task
+
+
 class _RunCancelled(RuntimeError):
     """Stop native execution after the user refuses a prepared action."""
 
@@ -45,6 +52,8 @@ class DeploymentNode(Simple):
     Bind services before running a native Workflow. A prepare callable returns
     an Action or a SKIPPED NodeResult. Missing inputs and invalid operations
     raise ContractError; operation exceptions retain their original identity.
+    Preparation is read-only and binds once per native task, before the stage
+    plan when its route and inputs are known, otherwise at native execution.
     Each task stores its inputs, action, result, and error in internal_data.
     Acceptance checks convert ordinary prepare/execute errors to INDETERMINATE
     results and complete natively; ContractError and interruptions still stop.
@@ -59,7 +68,7 @@ class DeploymentNode(Simple):
         allows: Callable[[ActionScope], bool] = _read_only,
     ):
         if declaration.id in spec.task_specs:
-            raise ContractError(f"Duplicate node identifier {declaration.id!r}")
+            raise ContractError(f"节点标识重复：{declaration.id!r}")
         super().__init__(spec, declaration.id)
         self.declaration = declaration
         self.prepare = prepare
@@ -70,59 +79,74 @@ class DeploymentNode(Simple):
         """Bind the current run's services; concurrent shared-spec runs are unsupported."""
         self.services = services
 
-    def _run_hook(self, task: Task) -> bool:
-        services = self.services
-        if services is None:
-            raise ContractError(f"Node {self.declaration.id!r} has no bound RunServices")
+    def _prepare_task(self, task: Task, data: dict) -> Action | NodeResult:
+        """Bind once to this native task; data contains only observed ancestor outputs."""
         state = task.internal_data.setdefault("xxautoenv", {})
+        if "prepared" in state:
+            return state["prepared"]
+        if "error" in state:
+            raise state["error"]
         operation_running = False
         try:
             inputs = {}
             for name, source in self.declaration.inputs.items():
                 if isinstance(source, Ref):
-                    if source.name not in task.data:
+                    if source.name not in data:
                         raise ContractError(
-                            f"Node {self.declaration.id!r} input {name!r} requires "
-                            f"missing output {source.name!r}"
+                            f"节点 {self.declaration.id!r} 的输入 {name!r} 缺少产出 {source.name!r}"
                         )
-                    inputs[name] = task.data[source.name]
+                    inputs[name] = data[source.name]
                 else:
                     inputs[name] = source
             state["inputs"] = inputs
             operation_running = True
             prepared = self.prepare(**inputs)
             operation_running = False
-            if isinstance(prepared, NodeResult):
-                if prepared.status is not NodeStatus.SKIPPED:
-                    raise ContractError(
-                        f"Node {self.declaration.id!r} prepare may only return "
-                        "an Action or a SKIPPED NodeResult"
-                    )
-                result = prepared
-            elif isinstance(prepared, Action):
+            if isinstance(prepared, Action):
                 state["action"] = prepared
                 self._validate_action(prepared)
+            elif not isinstance(prepared, NodeResult) or prepared.status is not NodeStatus.SKIPPED:
+                raise ContractError(f"节点 {self.declaration.id!r} 的 prepare 必须返回 Action 或 SKIPPED NodeResult")
+            state["prepared"] = prepared
+            return prepared
+        except BaseException as error:
+            state["error"] = error
+            if self._check_error(error, operation_running):
+                verdict = CheckResult(CheckVerdict.INDETERMINATE, str(error))
+                state["prepared"] = NodeResult(NodeStatus.SUCCESS, verdict, verdict.summary)
+                return state["prepared"]
+            raise
+
+    def _check_error(self, error: BaseException, operation_running: bool) -> bool:
+        return (getattr(self, "_is_check", False) and operation_running
+                and isinstance(error, Exception) and not isinstance(error, ContractError))
+
+    def _run_hook(self, task: Task) -> bool:
+        services = self.services
+        if services is None:
+            raise ContractError(f"节点 {self.declaration.id!r} 尚未绑定 RunServices")
+        # Direct native consumers need only RunServices; the runner owns stage pauses.
+        if hasattr(services, "enter"):
+            services.enter(task)
+        state = task.internal_data.setdefault("xxautoenv", {})
+        operation_running = False
+        try:
+            prepared = self._prepare_task(task, task.data)
+            if isinstance(prepared, NodeResult):
+                result = prepared
+                if "error" in state:
+                    services.failed(self.declaration, state["error"])
+            else:
                 if not services.before(self.declaration, prepared):
-                    result = NodeResult(NodeStatus.CANCELLED, None, "Action declined")
+                    result = NodeResult(NodeStatus.CANCELLED, None, "已拒绝动作")
                     state["result"] = result
                     services.finished(self.declaration, result)
-                    raise _RunCancelled(f"Node {self.declaration.id!r}: action declined")
+                    raise _RunCancelled(f"节点 {self.declaration.id!r}：已拒绝动作")
                 operation_running = True
                 result = prepared.execute()
                 operation_running = False
-                if not isinstance(result, NodeResult):
-                    raise ContractError(
-                        f"Node {self.declaration.id!r} Action.execute must return NodeResult"
-                    )
-                if result.status not in (NodeStatus.SUCCESS, NodeStatus.SKIPPED):
-                    raise ContractError(
-                        f"Node {self.declaration.id!r} Action.execute must return "
-                        "a SUCCESS or SKIPPED NodeResult"
-                    )
-            else:
-                raise ContractError(
-                    f"Node {self.declaration.id!r} prepare must return Action or SKIPPED NodeResult"
-                )
+                if not isinstance(result, NodeResult) or result.status not in (NodeStatus.SUCCESS, NodeStatus.SKIPPED):
+                    raise ContractError(f"节点 {self.declaration.id!r} 的 Action.execute 必须返回 SUCCESS 或 SKIPPED NodeResult")
             state["result"] = result
             task.data[self.declaration.output] = result.value
             services.finished(self.declaration, result)
@@ -131,25 +155,25 @@ class DeploymentNode(Simple):
             raise
         except BaseException as error:
             state["error"] = error
-            services.failed(self.declaration, error)
-            if (getattr(self, "_is_check", False) and operation_running
-                    and isinstance(error, Exception) and not isinstance(error, ContractError)):
+            if self._check_error(error, operation_running):
                 verdict = CheckResult(CheckVerdict.INDETERMINATE, str(error))
                 result = NodeResult(NodeStatus.SUCCESS, verdict, verdict.summary)
                 state["result"] = result
                 task.data[self.declaration.output] = verdict
+                services.failed(self.declaration, error)
                 services.finished(self.declaration, result)
                 return True
+            services.failed(self.declaration, error)
             raise
 
     def _validate_action(self, action: Action) -> None:
         if self.declaration.stage is Stage.ACCEPTANCE and action.changes:
             raise ContractError(
-                f"Node {self.declaration.id!r} in acceptance cannot execute a changing Action"
+                f"核查阶段节点 {self.declaration.id!r} 不能执行变更 Action"
             )
         if not action.changes and action.scope:
-            raise ContractError(f"Node {self.declaration.id!r} read-only Action must have empty scope")
+            raise ContractError(f"节点 {self.declaration.id!r} 的只读 Action 必须使用空范围")
         if action.changes and not action.scope:
-            raise ContractError(f"Node {self.declaration.id!r} changing Action requires scope")
+            raise ContractError(f"节点 {self.declaration.id!r} 的变更 Action 必须声明范围")
         if any(not self.allows(scope) for scope in action.scope):
-            raise ContractError(f"Node {self.declaration.id!r} Action scope exceeds declared allows")
+            raise ContractError(f"节点 {self.declaration.id!r} 的 Action 范围超出 allows 声明")

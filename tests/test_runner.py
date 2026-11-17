@@ -37,7 +37,7 @@ class RecordingTerminal:
     def finished(self, declaration, result):
         pass
 
-    def failed(self, declaration, error):
+    def failed(self, declaration, error, *, preparation_result=None):
         pass
 
     def prompt(self, message, default):

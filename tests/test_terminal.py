@@ -53,8 +53,8 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(report.exit_code, 0)
         self.assertEqual(reached, ['target'])
         output = self.out.getvalue()
-        for text in ('execution', 'acceptance', 'Install material', 'Deliver selected material',
-                     'Write target.txt', 'target.txt', 'success', 'Delivered', 'Verified'):
+        for text in ('执行', '最终验收', 'Deliver selected material',
+                     'Write target.txt', 'target.txt', '完成', 'Delivered', 'Verified'):
             self.assertIn(text, output)
         self.assertEqual(output.count('[y/N]'), 1)
         self.assertEqual(self.err.getvalue(), '')
@@ -64,7 +64,7 @@ class TerminalTests(unittest.TestCase):
         report = run(self.workflow(lambda: self.action(reached)), terminal=self.terminal('\n'))
         self.assertEqual(report.exit_code, 2)
         self.assertEqual(reached, [])
-        self.assertIn('cancelled', self.out.getvalue())
+        self.assertIn('取消', self.out.getvalue())
 
     def test_read_only_and_skipped_steps_never_confirm(self):
         for skipped in (False, True):
@@ -77,8 +77,8 @@ class TerminalTests(unittest.TestCase):
                 self.assertNotIn('[y/N]', self.out.getvalue())
                 if skipped:
                     self.assertIn('Already present', self.out.getvalue())
-                    self.assertIn('Install material', self.out.getvalue())
-                    self.assertIn('skipped', self.out.getvalue())
+                    self.assertIn('步骤（1）', self.out.getvalue())
+                    self.assertIn('跳过', self.out.getvalue())
 
     def test_auto_approval_displays_action_without_reading_confirmation(self):
         reached = []
@@ -118,7 +118,7 @@ class TerminalTests(unittest.TestCase):
                              terminal=self.terminal(interactive=interactive))
                 self.assertEqual(report.exit_code, 1)
                 self.assertEqual(reached, [])
-                self.assertIn('failed', self.out.getvalue())
+                self.assertIn('失败', self.out.getvalue())
 
     def test_error_prints_original_cause_and_failed_step(self):
         def prepare():
@@ -131,8 +131,8 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(report.exit_code, 1)
         for text in ('source unreadable', 'cannot prepare', 'Traceback'):
             self.assertIn(text, self.err.getvalue())
-        self.assertIn('Install material', self.out.getvalue())
-        self.assertIn('failed', self.out.getvalue())
+        self.assertIn('步骤（1）', self.out.getvalue())
+        self.assertIn('失败', self.out.getvalue())
 
     def test_streams_preserve_raw_output(self):
         terminal = self.terminal()
@@ -181,3 +181,22 @@ class TerminalTests(unittest.TestCase):
         with patch.object(sys, 'stderr', self.err):
             self.assertEqual(runner.main(build, argv=[]), 1)
         self.assertIn('invalid consumer configuration', self.err.getvalue())
+
+    def test_plan_has_four_columns_literal_description_and_single_step_receipt(self):
+        reached = []
+        spec = self.workflow(lambda: self.action(reached))
+        from dataclasses import replace
+        node = spec.task_specs['write']
+        node.declaration = replace(node.declaration, purpose='[bold]用户说明[/bold]')
+        terminal = self.terminal('y\n')
+        run(spec, terminal=terminal)
+        output = self.out.getvalue()
+        self.assertEqual(output.count('[bold]用户说明[/bold]'), 1)
+        self.assertNotIn('Install material', output)
+        self.assertEqual(output.count('Write target.txt'), 1)
+        self.assertEqual(output.count('Delivered'), 1)
+        self.assertEqual(output.count('Verified'), 1)
+        header = next(line for line in output.splitlines() if '允许动作' in line)
+        self.assertEqual([cell.strip() for cell in header.split('┃')][1:-1], ['#', '说明', '允许动作', '状态'])
+        self.assertIn('就绪', output)
+        self.assertIn('完成；通过', output)

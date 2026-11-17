@@ -1,13 +1,13 @@
 # 验证指南
 
-测试使用真实 SpiffWorkflow 3.2.0，覆盖节点、基础操作、运行交互和独立 wheel 消费。按[开发指南](development.md#开发环境)准备 Python 3.12、uv、构建依赖及平台 wheel，测试执行期间不下载依赖或安装工具链。
+测试使用真实 SpiffWorkflow 3.2.0 和 Rich 15.0.0，覆盖节点、基础操作、运行交互和独立 wheel 消费。按[开发指南](development.md#开发环境)准备 Python 3.12、uv、构建依赖及平台 wheel，测试执行期间不下载依赖或安装工具链。
 
 ## 定向验证
 
 在仓库根目录按修改范围运行所属模块，例如：
 
 ```bash
-uv run --locked python -m unittest tests.test_node -v
+uv run --locked python -m unittest tests.test_preparation tests.test_node -v
 uv run --locked python -m unittest tests.test_example -v
 ```
 

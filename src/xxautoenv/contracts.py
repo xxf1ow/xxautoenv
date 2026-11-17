@@ -80,6 +80,26 @@ class NodeDeclaration:
     output: str
 
 
+class PreparationStatus(Enum):
+    """Display-only facts; native task state remains the execution authority."""
+
+    OBSERVED = "observed"
+    READY = "ready"
+    NO_CHANGE = "no_change"
+    PENDING = "pending"
+    NOT_SELECTED = "not_selected"
+    INDETERMINATE = "indeterminate"
+
+
+@dataclass(frozen=True)
+class PreparedStep:
+    """Read-only stage row; it contains no executable action or scheduling state."""
+
+    declaration: NodeDeclaration
+    status: PreparationStatus
+    scope: tuple[ActionScope, ...] = ()
+
+
 class StepDisposition(Enum):
     """Report-only classification derived after native execution stops."""
 

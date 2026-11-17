@@ -9,7 +9,7 @@ description = "Local deployment nodes for native SpiffWorkflow graphs"
 requires-python = ">=3.12,<3.13"
 license = "MIT"
 license-files = ["LICENSE"]
-dependencies = ["SpiffWorkflow==3.2.0"]
+dependencies = ["SpiffWorkflow==3.2.0", "rich==15.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

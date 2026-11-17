@@ -35,9 +35,9 @@ def command_node(
 
         def execute() -> NodeResult:
             result = execute_command(bound, stdout=node.services.stdout, stderr=node.services.stderr)
-            return NodeResult(NodeStatus.SUCCESS, result, f'Command exited with {result.returncode}')
+            return NodeResult(NodeStatus.SUCCESS, result, f'命令已退出，退出码 {result.returncode}')
 
-        description = f'{shlex.join(bound.argv)} (cwd: {bound.cwd}, env: {dict(bound.env)!r})'
+        description = f'{shlex.join(bound.argv)} （工作目录：{bound.cwd}，环境覆盖：{dict(bound.env)!r}）'
         return Action(description, scope, execute, changes)
 
     node = DeploymentNode(spec, declaration, prepare, allows=lambda item: item in scope)

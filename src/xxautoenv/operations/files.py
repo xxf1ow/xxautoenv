@@ -31,7 +31,7 @@ def _read_file(path: Path) -> tuple[FileObservation, bytes | None]:
     except FileNotFoundError:
         return FileObservation(path, False, None, None), None
     if not stat.S_ISREG(metadata.st_mode):
-        raise ValueError(f'File {path} must be an ordinary file, not a symlink or other file type')
+        raise ValueError(f'文件 {path} 必须是普通文件，不能是符号链接或其他文件类型')
     content = path.read_bytes()
     return FileObservation(path, True, hashlib.sha256(content).hexdigest(),
                            stat.S_IMODE(metadata.st_mode)), content
@@ -60,22 +60,22 @@ def prepare_file(source: Path, destination: Path, mode: int) -> Action | NodeRes
     destination = Path(os.path.abspath(destination))
     material = inspect_file(source)
     if not material.exists:
-        raise FileNotFoundError(f'Source file {source} does not exist')
+        raise FileNotFoundError(f'来源文件 {source} 不存在')
     observed = inspect_file(destination)
     artifact = FileArtifact(destination, material.sha256, mode)
     if observed.exists and observed.sha256 == material.sha256 and observed.mode == mode:
-        return NodeResult(NodeStatus.SKIPPED, artifact, f'File {destination} already matches')
+        return NodeResult(NodeStatus.SKIPPED, artifact, f'文件 {destination} 已符合要求')
 
     missing = []
     anchor = destination.parent
     while not anchor.exists():
         # A dangling parent symlink is a conflict, not a directory to create.
         if anchor.is_symlink():
-            raise ValueError(f'Parent {anchor} is a dangling symlink')
+            raise ValueError(f'父路径 {anchor} 是悬空符号链接')
         missing.append(anchor)
         anchor = anchor.parent
     if not anchor.is_dir():
-        raise NotADirectoryError(f'Parent {anchor} is not a directory')
+        raise NotADirectoryError(f'父路径 {anchor} 不是目录')
     missing.reverse()
     parent_metadata = anchor.stat()
     parent_link = anchor.lstat()
@@ -88,21 +88,21 @@ def prepare_file(source: Path, destination: Path, mode: int) -> Action | NodeRes
 
     def verify_destination() -> None:
         if inspect_file(destination) != observed:
-            raise RuntimeError(f'Destination file {destination} changed after preparation')
+            raise RuntimeError(f'目标文件 {destination} 在准备后发生变化')
 
     def execute() -> NodeResult:
         current, content = _read_file(source)
         if not current.exists or current.sha256 != material.sha256:
-            raise RuntimeError(f'Source file {source} changed after preparation')
+            raise RuntimeError(f'来源文件 {source} 在准备后发生变化')
         verify_destination()
         metadata = anchor.stat()
         link = anchor.lstat()
         identity = (metadata.st_dev, metadata.st_ino, link.st_dev, link.st_ino)
         if not anchor.is_dir() or identity != parent_identity:
-            raise RuntimeError(f'Parent directory {anchor} changed after preparation')
+            raise RuntimeError(f'父目录 {anchor} 在准备后发生变化')
         for parent in parents:
             if parent.exists() or parent.is_symlink():
-                raise RuntimeError(f'Parent directory {parent} appeared after preparation')
+                raise RuntimeError(f'父目录 {parent} 在准备后出现')
         for parent in parents:
             parent.mkdir()
         temporary = None
@@ -115,12 +115,12 @@ def prepare_file(source: Path, destination: Path, mode: int) -> Action | NodeRes
             # Preserve an external target update that occurs while preparing bytes.
             verify_destination()
             os.replace(temporary, destination)
-            return NodeResult(NodeStatus.SUCCESS, artifact, f'Delivered file {destination}')
+            return NodeResult(NodeStatus.SUCCESS, artifact, f'已交付文件 {destination}')
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    description = f'Deliver {source} (sha256: {material.sha256}) to {destination}, mode {mode:04o}'
+    description = f'将 {source}（sha256: {material.sha256}）交付到 {destination}，权限 {mode:04o}'
     if parents:
-        description += '; create directories: ' + ', '.join(str(parent) for parent in parents)
+        description += '；创建目录：' + ', '.join(str(parent) for parent in parents)
     return Action(description, scope, execute, changes=True)

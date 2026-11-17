@@ -43,7 +43,7 @@ class CommandError(RuntimeError):
         self.request = request
         self.result = result
         super().__init__(
-            f'Command {request.argv!r} in {str(request.cwd)!r} exited with '
+            f'命令 {request.argv!r} 在 {str(request.cwd)!r} 退出，退出码 '
             f'{result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}'
         )
 

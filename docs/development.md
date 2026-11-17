@@ -35,7 +35,7 @@
 uv sync --locked
 ```
 
-`.python-version` 选择 Python 3.12，`uv.lock` 锁定 SpiffWorkflow 3.2.0。修改依赖声明后先运行 `uv lock`，再运行 `uv sync --locked`。首次准备环境需要取得 Python 和依赖；准备完成后的节点测试无需联网。
+`.python-version` 选择 Python 3.12，`uv.lock` 锁定 SpiffWorkflow 3.2.0 和 Rich 15.0.0。修改依赖声明后先运行 `uv lock`，再运行 `uv sync --locked`。首次准备环境需要取得 Python 和依赖；准备完成后的节点测试无需联网。
 
 ## 构建与独立消费
 

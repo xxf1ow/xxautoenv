@@ -14,9 +14,9 @@ from SpiffWorkflow.task import TaskState
 
 from .contracts import (
     CheckResult, CheckVerdict, Diagnostic, NodeDeclaration, RunReport,
-    RunStatus, StepDisposition, StepReport,
+    RunStatus, StepDisposition, StepReport, PreparedStep, PreparationStatus, Ref, NodeStatus, NodeResult,
 )
-from .node import DeploymentNode, _RunCancelled
+from .node import DeploymentNode, _RunCancelled, _PlanBoundary
 from .workflow import describe_workflow, validate_workflow
 
 if TYPE_CHECKING:
@@ -29,33 +29,147 @@ class _Services:
         self.auto_approve = auto_approve
         self.declarations = declarations
         self.current_stage = None
+        self.preparing = False
+        self.current_task = None
+        self.receipts = []
 
-    def ready(self, workflow, task):
-        declaration = task.task_spec.declaration
-        try:
-            if declaration.stage is not self.current_stage:
-                self.current_stage = declaration.stage
-                self.terminal.stage(
-                    declaration.stage,
-                    tuple(item for item in self.declarations if item.stage is declaration.stage),
-                )
-        except BaseException as error:
-            task.internal_data.setdefault("xxautoenv", {})["error"] = error
-            self.failed(declaration, error)
-            raise
+    def enter(self, task):
+        self.current_task = task
+        node = task.task_spec
+        if (node.declaration.stage is not self.current_stage
+                or self.preparing and (not getattr(node, "_is_probe", False)
+                                       or getattr(node, "_is_check", False))):
+            raise _PlanBoundary(task)
 
     def before(self, declaration, action):
+        if self.preparing:
+            self.receipts.append((self.current_task.id, "before"))
+            return True
         self.terminal.before(declaration, action)
-        return (
-            not action.changes or self.auto_approve
-            or self.terminal.confirm(f"Approve {action.description}?")
-        )
+        return (not action.changes or self.auto_approve
+                or self.terminal.confirm("批准此步骤的动作及范围？"))
 
     def finished(self, declaration, result):
-        self.terminal.finished(declaration, result)
+        state = self.current_task.internal_data.get("xxautoenv", {})
+        if state.get("preparation_failure_displayed") and result is state.get("prepared"):
+            return
+        if self.preparing:
+            self.receipts.append((self.current_task.id, "finished"))
+        else:
+            self.terminal.finished(declaration, result)
 
     def failed(self, declaration, error):
-        self.terminal.failed(declaration, error)
+        state = self.current_task.internal_data.get("xxautoenv", {})
+        if state.get("preparation_failure_displayed") and error is state.get("error"):
+            return
+        if self.preparing:
+            self.receipts.append((self.current_task.id, "failed"))
+        else:
+            self._failure(self.current_task, error)
+
+    def _failure(self, task, error):
+        state = task.internal_data.get("xxautoenv", {})
+        result = state.get("result", state.get("prepared"))
+        completed_check = (getattr(task.task_spec, "_is_check", False)
+                           and isinstance(result, NodeResult) and isinstance(result.value, CheckResult))
+        if completed_check:
+            self.terminal.stderr("".join(traceback.format_exception(error)))
+        else:
+            self.terminal.failed(task.task_spec.declaration, error)
+
+    def flush(self, workflow):
+        """Receipts retain only task IDs and event kinds; task facts own their payloads."""
+        tasks = {task.id: task for task in workflow.get_tasks()}
+        receipts, self.receipts = self.receipts, []
+        for task_id, kind in receipts:
+            task = tasks[task_id]
+            declaration = task.task_spec.declaration
+            state = task.internal_data["xxautoenv"]
+            if kind == "preparation_failed":
+                self.terminal.failed(declaration, state["error"], preparation_result=state["prepared"])
+                state["preparation_failure_displayed"] = True
+            elif kind == "failed":
+                self._failure(task, state["error"])
+            elif kind == "before":
+                self.terminal.before(declaration, state["action"])
+            else:
+                self.terminal.finished(declaration, state["result"])
+
+    def plan(self, workflow):
+        """Prepare definite native tasks with known inputs without advancing them."""
+        for task in workflow.get_tasks():
+            node = task.task_spec
+            if (not isinstance(node, DeploymentNode) or node.declaration.stage is not self.current_stage
+                    or task.state not in (TaskState.READY, TaskState.FUTURE)):
+                continue
+            ancestry, ancestor = [], task
+            while ancestor is not None:
+                ancestry.append(ancestor)
+                ancestor = ancestor.parent
+            data = {}
+            for ancestor in reversed(ancestry):
+                data.update(ancestor.data)
+            if any(isinstance(source, Ref) and source.name not in data
+                   for source in node.declaration.inputs.values()):
+                continue
+            self.current_task = task
+            try:
+                node._prepare_task(task, data)
+            except BaseException as error:
+                self.failed(node.declaration, error)
+                raise
+            if "error" in task.internal_data["xxautoenv"]:
+                self.receipts.append((task.id, "preparation_failed"))
+        dispositions = _unexecuted_dispositions(workflow)
+        tasks = {task.task_spec: task for task in workflow.get_tasks()}
+        rows = []
+        for declaration in self.declarations:
+            if declaration.stage is not self.current_stage:
+                continue
+            node = workflow.spec.task_specs[declaration.id]
+            task = tasks.get(node)
+            state = {} if task is None else task.internal_data.get("xxautoenv", {})
+            prepared = state.get("prepared")
+            if task is not None and task.state == TaskState.COMPLETED:
+                status = PreparationStatus.OBSERVED
+            elif "error" in state:
+                status = PreparationStatus.INDETERMINATE
+            elif getattr(prepared, "status", None) is NodeStatus.SKIPPED:
+                status = PreparationStatus.NO_CHANGE
+            elif "action" in state:
+                status = PreparationStatus.READY
+            elif dispositions[node] is StepDisposition.NOT_SELECTED:
+                status = PreparationStatus.NOT_SELECTED
+            else:
+                status = PreparationStatus.PENDING
+            rows.append(PreparedStep(declaration, status, getattr(prepared, "scope", ())))
+        try:
+            self.terminal.stage(self.current_stage, tuple(rows))
+        except BaseException as error:
+            self.current_task.internal_data.setdefault("xxautoenv", {})["error"] = error
+            self.failed(self.current_task.task_spec.declaration, error)
+            raise
+        self.flush(workflow)
+
+    def drive(self, workflow):
+        """Let native execution choose the next task; pause only for stage plans."""
+        while True:
+            try:
+                workflow.run_all()
+            except _PlanBoundary as boundary:
+                stage = boundary.task.task_spec.declaration.stage
+                if stage is not self.current_stage:
+                    if self.preparing:
+                        self.plan(workflow)
+                    self.current_stage = stage
+                    self.preparing = True
+                else:
+                    self.plan(workflow)
+                    self.preparing = False
+            else:
+                if self.preparing:
+                    self.plan(workflow)
+                return
 
     def prompt(self, message, default):
         return self.terminal.prompt(message, default)
@@ -114,6 +228,9 @@ def _aggregate(workflow: Workflow, declarations: tuple[NodeDeclaration, ...],
         state = states.get(node, {})
         result = state.get("result")
         error = state.get("error")
+        if (result is None and error is not None and getattr(node, "_is_check", False)
+                and isinstance(state.get("prepared"), NodeResult)):
+            result = state.get("prepared")
         diagnostic = None if error is None else Diagnostic(
             declaration.id, declaration.stage, error,
             "".join(traceback.format_exception(error)),
@@ -153,12 +270,11 @@ def run(spec: WorkflowSpec, *, auto_approve: bool = False,
     terminal.begin(declarations)
     for node in nodes:
         node.bind(services)
-        node.ready_event.connect(services.ready)
     try:
         workflow = Workflow(spec)
         status = RunStatus.SUCCESS
         try:
-            workflow.run_all()
+            services.drive(workflow)
             if not workflow.is_completed():
                 status = RunStatus.FAILED
         except _RunCancelled:
@@ -172,12 +288,14 @@ def run(spec: WorkflowSpec, *, auto_approve: bool = False,
             ):
                 raise
             status = RunStatus.FAILED
+        services.flush(workflow)
         report = _aggregate(workflow, declarations, status)
         terminal.report(report)
         return report
     finally:
+        if "workflow" in locals():
+            services.flush(workflow)
         for node in nodes:
-            node.ready_event.disconnect(services.ready)
             node.services = None
 
 
@@ -197,7 +315,7 @@ def main(
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('-y', action='store_true', dest='auto_approve',
-                        help='Approve changing actions automatically; configuration still requires input')
+                        help='自动批准变更动作；配置仍需输入')
     if configure is not None:
         configure(parser)
     args = parser.parse_args(argv)

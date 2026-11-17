@@ -20,7 +20,7 @@ def function_node(
     function: Callable[..., object],
     summary: Callable[[object], str],
 ) -> DeploymentNode:
-    """Run a read-only function at execution time using declared keyword inputs."""
+    """Run a read-only probe once when native execution reaches it, including stage preparation."""
     declaration = NodeDeclaration(id, name, purpose, stage, dict(inputs), output)
 
     def prepare(**values: object) -> Action:
@@ -30,7 +30,9 @@ def function_node(
 
         return Action(purpose, (), execute)
 
-    return DeploymentNode(spec, declaration, prepare)
+    node = DeploymentNode(spec, declaration, prepare)
+    node._is_probe = True
+    return node
 
 
 def action_node(
