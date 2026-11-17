@@ -180,6 +180,24 @@ class NodeTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             self.workflow(node).run_all()
 
+    def test_action_terminal_status_is_rejected_before_output_or_downstream_execution(self):
+        for status in (NodeStatus.FAILED, NodeStatus.CANCELLED, NodeStatus.INTERRUPTED):
+            with self.subTest(status=status):
+                self.setUp()
+                received = []
+                result = NodeResult(status, "terminal-value", "Stopped")
+                producer = self.action(lambda: Action("Read value", (), lambda: result))
+                consumer = self.function("consumer", lambda value: received.append(value),
+                                         inputs={"value": Ref("result")})
+                workflow = self.workflow(producer, consumer)
+                with self.assertRaises(ContractError):
+                    workflow.run_all()
+                self.assertEqual(received, [])
+                self.assertEqual(self.services.results, [])
+                self.assertIsInstance(self.services.errors[0][1], ContractError)
+                task = next(task for task in workflow.get_tasks() if task.task_spec is producer)
+                self.assertNotIn("result", task.data)
+
     def test_execution_error_preserves_original_exception_and_stops_downstream(self):
         failure = ValueError("Cannot read source")
         reached = []

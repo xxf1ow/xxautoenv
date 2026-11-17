@@ -102,6 +102,11 @@ class DeploymentNode(Simple):
                     raise ContractError(
                         f"Node {self.declaration.id!r} Action.execute must return NodeResult"
                     )
+                if result.status not in (NodeStatus.SUCCESS, NodeStatus.SKIPPED):
+                    raise ContractError(
+                        f"Node {self.declaration.id!r} Action.execute must return "
+                        "a SUCCESS or SKIPPED NodeResult"
+                    )
             else:
                 raise ContractError(
                     f"Node {self.declaration.id!r} prepare must return Action or SKIPPED NodeResult"
