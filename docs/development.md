@@ -1,6 +1,6 @@
 # 开发指南
 
-本仓库面向公共部署能力的维护者。当前包含文档和文档检查脚本，产品源码、包元数据及实施计划尚未建立。
+本仓库面向公共部署能力的维护者。公共 Python 包位于 `src/xxautoenv/`，使用 Python 3.12、uv 和 setuptools。
 
 正式设计提案见[公共部署节点与交互运行入口](agent-notes/proposed/architecture/2026-11-16-public-deployment-library.md)。
 
@@ -27,4 +27,14 @@
 
 文档使用相对 Markdown 链接，一段正文占一个物理行。文档预算在 `scripts/doc-budgets.manifest.json` 中维护，预算是上限而非缩写目标。
 
-验证命令统一由[验证指南](testing.md)维护。产品依赖安装、构建及测试命令在相应能力实现并实际验证后补充，不在初始化时提供不可运行的示例。
+## 开发环境
+
+安装 uv 后，在仓库根目录同步锁定的依赖和本地包：
+
+```bash
+uv sync --locked
+```
+
+`.python-version` 选择 Python 3.12，`uv.lock` 锁定 SpiffWorkflow 3.2.0。修改依赖声明后先运行 `uv lock`，再运行 `uv sync --locked`。首次准备环境需要取得 Python 和依赖；准备完成后的节点测试无需联网。
+
+验证命令统一由[验证指南](testing.md)维护。

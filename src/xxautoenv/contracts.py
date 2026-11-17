@@ -1,0 +1,80 @@
+"""Data shared by deployment nodes, consumers, and run reporting."""
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from enum import Enum
+
+
+class ContractError(RuntimeError):
+    """A declaration, input, or node result violates the deployment API."""
+
+
+class Stage(Enum):
+    GUIDANCE = "guidance"
+    EXECUTION = "execution"
+    ACCEPTANCE = "acceptance"
+
+
+class NodeStatus(Enum):
+    SUCCESS = "success"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+
+
+class CheckVerdict(Enum):
+    PASSED = "passed"
+    NOT_PASSED = "not_passed"
+    INDETERMINATE = "indeterminate"
+
+
+class RunStatus(Enum):
+    SUCCESS = "success"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
+
+
+@dataclass(frozen=True)
+class Ref:
+    name: str
+
+
+@dataclass(frozen=True)
+class ActionScope:
+    action: str
+    target: str
+
+
+@dataclass(frozen=True)
+class NodeResult:
+    status: NodeStatus
+    value: object
+    summary: str
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    verdict: CheckVerdict
+    summary: str
+
+
+@dataclass(frozen=True)
+class Action:
+    """A prepared operation; declared scope checks do not sandbox execution."""
+
+    description: str
+    scope: tuple[ActionScope, ...]
+    execute: Callable[[], NodeResult]
+    changes: bool = False
+
+
+@dataclass(frozen=True)
+class NodeDeclaration:
+    id: str
+    name: str
+    purpose: str
+    stage: Stage
+    inputs: Mapping[str, object | Ref]
+    output: str
