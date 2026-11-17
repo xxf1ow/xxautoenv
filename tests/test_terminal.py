@@ -65,6 +65,8 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(report.exit_code, 2)
         self.assertEqual(reached, [])
         self.assertIn('取消', self.out.getvalue())
+        self.assertEqual(self.out.getvalue().count('最终验收 步骤（1） [未执行]'), 1)
+        self.assertEqual(self.out.getvalue().strip().splitlines()[-1], '部署：取消')
 
     def test_read_only_and_skipped_steps_never_confirm(self):
         for skipped in (False, True):
@@ -133,6 +135,8 @@ class TerminalTests(unittest.TestCase):
             self.assertIn(text, self.err.getvalue())
         self.assertIn('步骤（1）', self.out.getvalue())
         self.assertIn('失败', self.out.getvalue())
+        self.assertEqual(self.out.getvalue().count('最终验收 步骤（1） [未执行]'), 1)
+        self.assertEqual(self.out.getvalue().strip().splitlines()[-1], '部署：失败')
 
     def test_streams_preserve_raw_output(self):
         terminal = self.terminal()
@@ -196,7 +200,27 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(output.count('Write target.txt'), 1)
         self.assertEqual(output.count('Delivered'), 1)
         self.assertEqual(output.count('Verified'), 1)
-        header = next(line for line in output.splitlines() if '允许动作' in line)
-        self.assertEqual([cell.strip() for cell in header.split('┃')][1:-1], ['#', '说明', '允许动作', '状态'])
-        self.assertIn('就绪', output)
+        self.assertIn('Allowed actions', output)
+        header = next(line for line in output.splitlines() if 'Allowed actions' in line)
+        self.assertEqual([cell.strip() for cell in header.split('┃')][1:-1], ['#', '说明', 'Allowed actions', 'Status'])
+        self.assertIn('ready', output)
         self.assertIn('完成；通过', output)
+
+    def test_stage_separation_uses_rich_rule_between_result_and_next_plan(self):
+        terminal = self.terminal('y\n')
+        run(self.workflow(lambda: self.action([])), terminal=terminal)
+        output = self.out.getvalue()
+        between = output[output.index('Delivered'):output.index('阶段：最终验收')]
+        self.assertTrue(any(line.strip() and set(line.strip()) == {'─'}
+                            for line in between.splitlines()), between)
+
+    def test_terminal_reuse_resets_stage_separators(self):
+        terminal = self.terminal()
+        spec = self.workflow(lambda: self.action([], changes=False))
+        for _ in range(2):
+            self.out.seek(0)
+            self.out.truncate()
+            run(spec, terminal=terminal)
+            output = self.out.getvalue()
+            self.assertNotIn('─', output.split('阶段：执行')[0])
+            self.assertEqual(output.strip().splitlines()[-1], '部署：成功')

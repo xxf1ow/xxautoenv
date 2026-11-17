@@ -161,6 +161,12 @@ class _Services:
                 if stage is not self.current_stage:
                     if self.preparing:
                         self.plan(workflow)
+                    if self.current_stage is not None:
+                        self.flush(workflow)
+                        self.terminal.stage_finished(
+                            self.current_stage,
+                            _aggregate(workflow, self.declarations, RunStatus.SUCCESS).steps,
+                        )
                     self.current_stage = stage
                     self.preparing = True
                 else:

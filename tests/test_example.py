@@ -68,10 +68,35 @@ class ExampleTests(unittest.TestCase):
             os.close(master)
 
     def assert_checks(self, output):
+        self.assertEqual(output.strip().splitlines()[-1], '部署：成功')
         self.assertIn('步骤（1） [完成；通过]', output)
         self.assertIn('步骤（2） [完成；通过]', output)
         self.assertEqual(output.count('[完成；通过]'), 2)
         self.assertIn('部署：成功', output)
+        stages = ('配置引导', '执行', '最终验收')
+        for index, (stage, count) in enumerate(zip(stages, (2, 5, 2))):
+            start = output.index('阶段：' + stage)
+            stop = output.index('阶段：' + stages[index + 1]) if index < 2 else len(output)
+            receipts = output[start:stop]
+            for position in range(1, count + 1):
+                self.assertEqual(receipts.count(f'步骤（{position}） ['), 1, receipts)
+
+    def assert_stage_closure(self, output, disposition, receipt):
+        self.assertEqual(output.count(disposition), 1)
+        self.assertLess(output.index(receipt), output.index(disposition))
+        self.assertLess(output.index(disposition), output.index('阶段：最终验收'))
+
+    def assert_english_columns(self, output):
+        headers = [line for line in output.splitlines() if 'Allowed actions' in line]
+        self.assertEqual(len(headers), 3)
+        for line in headers:
+            self.assertEqual([cell.strip() for cell in line.split('┃')][1:-1],
+                             ['#', '说明', 'Allowed actions', 'Status'])
+        for line in output.splitlines():
+            if line.startswith('│'):
+                cells = [cell.strip() for cell in line.split('│')][1:-1]
+                self.assertTrue(cells[-2].isascii(), line)
+                self.assertTrue(cells[-1].isascii(), line)
 
     def test_first_delivery_then_reuse_still_checks_both_requirements(self):
         first = self.execute('--target-dir', str(self.target), '-y')
@@ -80,7 +105,9 @@ class ExampleTests(unittest.TestCase):
         self.assertEqual(installed.read_text(), 'Hello from xxautoenv.\n')
         self.assertEqual(installed.stat().st_mode & 0o777, 0o644)
         self.assertIn('步骤（4） [完成] 已交付文件', first.stdout)
+        self.assert_stage_closure(first.stdout, '执行 步骤（5） [未选择]', '步骤（4） [完成]')
         self.assert_checks(first.stdout)
+        self.assert_english_columns(first.stdout)
         before = installed.stat().st_mtime_ns
         second = self.execute('--target-dir', str(self.target))
         self.assertEqual(second.returncode, 0, second.stderr)
@@ -89,6 +116,8 @@ class ExampleTests(unittest.TestCase):
         self.assertNotIn('[y/N]', second.stdout)
         self.assertEqual(installed.stat().st_mtime_ns, before)
         self.assert_checks(second.stdout)
+        self.assert_stage_closure(second.stdout, '执行 步骤（4） [未选择]', '步骤（5） [跳过]')
+        self.assert_english_columns(second.stdout)
 
     def test_content_or_permission_changes_require_delivery(self):
         self.target.mkdir()
@@ -126,6 +155,11 @@ class ExampleTests(unittest.TestCase):
         self.assertIn('部署：取消', output)
         self.assertIn('最终验收 步骤（1） [未执行]', output)
         self.assertIn('最终验收 步骤（2） [未执行]', output)
+        self.assertEqual(output.strip().splitlines()[-1], '部署：取消')
+        for disposition in ('执行 步骤（5） [未选择]', '最终验收 步骤（1） [未执行]',
+                            '最终验收 步骤（2） [未执行]'):
+            self.assertEqual(output.count(disposition), 1)
+            self.assertLess(output.index(disposition), output.index('部署：取消'))
 
     def test_auto_approval_does_not_supply_missing_input(self):
         result = self.execute('-y')

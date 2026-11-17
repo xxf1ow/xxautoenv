@@ -10,7 +10,7 @@ from rich.text import Text
 
 from .contracts import (
     Action, CheckResult, NodeDeclaration, NodeResult, NodeStatus, RunReport, Stage,
-    StepDisposition, PreparedStep, PreparationStatus, CheckVerdict, RunStatus,
+    StepDisposition, StepReport, PreparedStep, PreparationStatus, CheckVerdict, RunStatus,
 )
 
 
@@ -19,9 +19,6 @@ _NODE_STATUS = {NodeStatus.SUCCESS: "完成", NodeStatus.SKIPPED: "跳过", Node
                 NodeStatus.CANCELLED: "取消", NodeStatus.INTERRUPTED: "中断"}
 _RUN_STATUS = {RunStatus.SUCCESS: "成功", RunStatus.FAILED: "失败", RunStatus.CANCELLED: "取消", RunStatus.INTERRUPTED: "中断"}
 _VERDICTS = {CheckVerdict.PASSED: "通过", CheckVerdict.NOT_PASSED: "不通过", CheckVerdict.INDETERMINATE: "无法判定"}
-_PREPARATION = {PreparationStatus.OBSERVED: "已探测", PreparationStatus.READY: "就绪",
-                PreparationStatus.NO_CHANGE: "无需变更", PreparationStatus.PENDING: "等待输入、依赖或分支",
-                PreparationStatus.NOT_SELECTED: "未选择", PreparationStatus.INDETERMINATE: "核查无法判定"}
 _DISPOSITIONS = {StepDisposition.NOT_SELECTED: "未选择", StepDisposition.NOT_EXECUTED: "未执行", StepDisposition.PENDING: "路由待定"}
 
 
@@ -42,6 +39,8 @@ class Terminal:
     def begin(self, declarations: tuple[NodeDeclaration, ...]) -> None:
         """Assign stable positions within each stage without repeating descriptions."""
         self._positions = {}
+        self._published_dispositions = set()
+        self._stage_shown = False
         for stage in Stage:
             for position, declaration in enumerate((item for item in declarations if item.stage is stage), 1):
                 self._positions[declaration.id] = position
@@ -54,16 +53,20 @@ class Terminal:
         table = Table(title=Text(f"阶段：{_STAGES[stage]}"), show_lines=False)
         table.add_column("#", justify="right")
         table.add_column("说明")
-        table.add_column("允许动作")
-        table.add_column("状态")
+        table.add_column("Allowed actions")
+        table.add_column("Status")
         for position, item in enumerate(plan, 1):
             allowed = ", ".join(dict.fromkeys(scope.action for scope in item.scope))
             if not allowed:
-                allowed = ("待准备" if item.status is PreparationStatus.PENDING
-                           else "—" if item.status is PreparationStatus.NOT_SELECTED else "只读")
+                allowed = ("pending" if item.status is PreparationStatus.PENDING
+                           else "n/a" if item.status is PreparationStatus.NOT_SELECTED else "read-only")
             table.add_row(str(position), Text(item.declaration.purpose), Text(allowed),
-                          Text(_PREPARATION[item.status]))
-        Console(file=self._stdout).print(table)
+                          Text(item.status.value))
+        console = Console(file=self._stdout)
+        if self._stage_shown:
+            console.rule()
+        console.print(table)
+        self._stage_shown = True
 
     def before(self, declaration: NodeDeclaration, action: Action) -> None:
         """Display concrete action details once before the runner requests approval."""
@@ -120,9 +123,18 @@ class Terminal:
         self._stderr.write(text)
         self._stderr.flush()
 
-    def report(self, report: RunReport) -> None:
-        """Display run status and distinguish every step without a business result."""
-        self.stdout(f'\n部署：{_RUN_STATUS[report.status]}\n')
-        for step in report.steps:
-            if step.disposition is not StepDisposition.EXECUTED:
+    def stage_finished(self, stage: Stage, steps: tuple[StepReport, ...]) -> None:
+        """Publish remaining dispositions before the next native stage begins."""
+        self._dispositions(tuple(step for step in steps if step.declaration.stage is stage))
+
+    def _dispositions(self, steps: tuple[StepReport, ...]) -> None:
+        for step in steps:
+            if (step.disposition is not StepDisposition.EXECUTED
+                    and step.declaration.id not in self._published_dispositions):
                 self.stdout(f'{_STAGES[step.declaration.stage]} {self._step(step.declaration)} [{_DISPOSITIONS[step.disposition]}]\n')
+                self._published_dispositions.add(step.declaration.id)
+
+    def report(self, report: RunReport) -> None:
+        """Publish outstanding dispositions, then the final deployment conclusion."""
+        self._dispositions(report.steps)
+        self.stdout(f'\n部署：{_RUN_STATUS[report.status]}\n')

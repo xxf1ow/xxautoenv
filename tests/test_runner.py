@@ -1,3 +1,4 @@
+import io
 import unittest
 
 from SpiffWorkflow.operators import Attrib, Equal
@@ -9,6 +10,7 @@ from xxautoenv.contracts import (
 )
 from xxautoenv.nodes.function import action_node, function_node
 from xxautoenv.runner import run
+from xxautoenv.terminal import Terminal
 
 
 class RecordingTerminal:
@@ -24,6 +26,9 @@ class RecordingTerminal:
 
     def stage(self, stage, declarations):
         self.stages.append(stage)
+
+    def stage_finished(self, stage, steps):
+        pass
 
     def before(self, declaration, action):
         self.actions.append((declaration.id, action))
@@ -133,10 +138,22 @@ class RunnerTests(unittest.TestCase):
         self.spec.start.connect(source)
         self.check(left, right, inputs={"value": Ref("common")},
                    function=lambda value: CheckResult(CheckVerdict.PASSED, str(value)))
-        first = run(self.spec, terminal=self.terminal)
+        output = io.StringIO()
+        terminal = Terminal(stdout=output, stderr=output)
+        for _ in range(2):
+            first = run(self.spec, terminal=terminal)
+            first_output = output.getvalue()
+            self.assertEqual(first_output.count("执行 步骤（2） [未选择]"), 1)
+            output.seek(0)
+            output.truncate()
         choice_value[0] = "right"
-        second = run(self.spec, terminal=RecordingTerminal())
-        self.assertEqual(trace, ["left", "right"])
+        second = run(self.spec, terminal=terminal)
+        for text, unselected in ((first_output, 2), (output.getvalue(), 1)):
+            disposition = f"执行 步骤（{unselected}） [未选择]"
+            self.assertEqual(text.count(disposition), 1)
+            self.assertLess(text.index(disposition), text.index("阶段：最终验收"))
+            self.assertEqual(text.strip().splitlines()[-1], "部署：成功")
+        self.assertEqual(trace, ["left", "left", "right"])
         first_steps = {step.declaration.id: step for step in first.steps}
         self.assertEqual(first_steps["left"].disposition, StepDisposition.EXECUTED)
         self.assertEqual(first_steps["right"].disposition, StepDisposition.NOT_SELECTED)
@@ -158,7 +175,12 @@ class RunnerTests(unittest.TestCase):
         choice.connect_if(Equal(Attrib("source"), "left"), left)
         choice.connect(right)
         self.check(left, right)
-        report = run(self.spec, terminal=self.terminal)
+        output = io.StringIO()
+        report = run(self.spec, terminal=Terminal(stdout=output, stderr=output))
+        self.assertEqual(output.getvalue().strip().splitlines()[-1], "部署：失败")
+        for line in ("执行 步骤（2） [路由待定]", "执行 步骤（3） [路由待定]",
+                     "最终验收 步骤（1） [路由待定]"):
+            self.assertEqual(output.getvalue().count(line), 1)
         steps = {step.declaration.id: step for step in report.steps}
         self.assertEqual(steps["source"].disposition, StepDisposition.EXECUTED)
         for id in ("left", "right", "check"):
@@ -176,7 +198,11 @@ class RunnerTests(unittest.TestCase):
         choice.connect(selected)
         choice.connect_if(Equal(1, 2), unselected)
         self.check(selected, unselected)
-        report = run(self.spec, terminal=self.terminal)
+        output = io.StringIO()
+        report = run(self.spec, terminal=Terminal(stdout=output, stderr=output))
+        self.assertEqual(output.getvalue().strip().splitlines()[-1], "部署：失败")
+        for line in ("执行 步骤（2） [未选择]", "最终验收 步骤（1） [未执行]"):
+            self.assertEqual(output.getvalue().count(line), 1)
         steps = {step.declaration.id: step for step in report.steps}
         self.assertEqual(steps["selected"].disposition, StepDisposition.EXECUTED)
         self.assertEqual(steps["unselected"].disposition, StepDisposition.NOT_SELECTED)
@@ -242,7 +268,10 @@ class RunnerTests(unittest.TestCase):
         node = self.node("interrupt", interrupt)
         self.spec.start.connect(node)
         self.check(node, function=lambda: reached.append(True))
-        report = run(self.spec, terminal=self.terminal)
+        output = io.StringIO()
+        report = run(self.spec, terminal=Terminal(stdout=output, stderr=output))
+        self.assertEqual(output.getvalue().count("最终验收 步骤（1） [未执行]"), 1)
+        self.assertEqual(output.getvalue().strip().splitlines()[-1], "部署：中断")
         self.assertEqual(report.status, RunStatus.INTERRUPTED)
         self.assertEqual(report.exit_code, 130)
         self.assertIs(report.steps[0].diagnostic.error, interruption)
