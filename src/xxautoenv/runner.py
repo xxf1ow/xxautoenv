@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
+import sys
 import traceback
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from SpiffWorkflow import Workflow
@@ -176,3 +179,33 @@ def run(spec: WorkflowSpec, *, auto_approve: bool = False,
         for node in nodes:
             node.ready_event.disconnect(services.ready)
             node.services = None
+
+
+def main(
+    build: Callable[[argparse.Namespace], WorkflowSpec],
+    *,
+    argv: Sequence[str] | None = None,
+    configure: Callable[[argparse.ArgumentParser], None] | None = None,
+) -> int:
+    """Parse shared -y and consumer arguments, build the native graph, and run.
+
+    Consumers register their own arguments through configure. Return 0 for
+    success, 1 for failure, 2 for refusal, or 130 for KeyboardInterrupt.
+    ArgumentParser retains its standard help and invalid-argument exit behavior.
+    Ordinary build/validation errors print their full traceback and return 1;
+    SystemExit propagates.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-y', action='store_true', dest='auto_approve',
+                        help='Approve changing actions automatically; configuration still requires input')
+    if configure is not None:
+        configure(parser)
+    args = parser.parse_args(argv)
+    try:
+        return run(build(args), auto_approve=args.auto_approve).exit_code
+    except KeyboardInterrupt:
+        traceback.print_exc(file=sys.stderr)
+        return 130
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+        return 1

@@ -9,6 +9,8 @@ from SpiffWorkflow.task import Task
 from .contracts import (
     Action,
     ActionScope,
+    CheckResult,
+    CheckVerdict,
     ContractError,
     NodeDeclaration,
     NodeResult,
@@ -43,6 +45,8 @@ class DeploymentNode(Simple):
     an Action or a SKIPPED NodeResult. Missing inputs and invalid operations
     raise ContractError; operation exceptions retain their original identity.
     Each task stores its inputs, action, result, and error in internal_data.
+    Acceptance checks convert ordinary prepare/execute errors to INDETERMINATE
+    results and complete natively; ContractError and interruptions still stop.
     """
 
     def __init__(
@@ -70,6 +74,7 @@ class DeploymentNode(Simple):
         if services is None:
             raise ContractError(f"Node {self.declaration.id!r} has no bound RunServices")
         state = task.internal_data.setdefault("xxautoenv", {})
+        operation_running = False
         try:
             inputs = {}
             for name, source in self.declaration.inputs.items():
@@ -83,7 +88,9 @@ class DeploymentNode(Simple):
                 else:
                     inputs[name] = source
             state["inputs"] = inputs
+            operation_running = True
             prepared = self.prepare(**inputs)
+            operation_running = False
             if isinstance(prepared, NodeResult):
                 if prepared.status is not NodeStatus.SKIPPED:
                     raise ContractError(
@@ -99,7 +106,9 @@ class DeploymentNode(Simple):
                     state["result"] = result
                     services.finished(self.declaration, result)
                     raise _RunCancelled(f"Node {self.declaration.id!r}: action declined")
+                operation_running = True
                 result = prepared.execute()
+                operation_running = False
                 if not isinstance(result, NodeResult):
                     raise ContractError(
                         f"Node {self.declaration.id!r} Action.execute must return NodeResult"
@@ -122,9 +131,19 @@ class DeploymentNode(Simple):
         except BaseException as error:
             state["error"] = error
             services.failed(self.declaration, error)
+            if (getattr(self, "_is_check", False) and operation_running
+                    and isinstance(error, Exception) and not isinstance(error, ContractError)):
+                verdict = CheckResult(CheckVerdict.INDETERMINATE, str(error))
+                result = NodeResult(NodeStatus.SUCCESS, verdict, verdict.summary)
+                state["result"] = result
+                task.data[self.declaration.output] = verdict
+                services.finished(self.declaration, result)
+                return True
             raise
 
     def _validate_action(self, action: Action) -> None:
+        if getattr(self, "_is_check", False) and action.changes:
+            raise ContractError(f"Check {self.declaration.id!r} cannot execute a changing Action")
         if not action.changes and action.scope:
             raise ContractError(f"Node {self.declaration.id!r} read-only Action must have empty scope")
         if action.changes and not action.scope:
