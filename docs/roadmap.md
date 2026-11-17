@@ -1,6 +1,6 @@
 # 路线图
 
-本页记录公共仓库的交付范围，不表示能力已经实现。具体接口和实施顺序由评审后的[正式设计](agent-notes/proposed/architecture/2026-11-16-public-deployment-library.md)与实施计划确定。
+本页记录公共仓库的交付范围，不表示能力已经实现。本地消费的当前实现见[架构说明](architecture.md)，决定与后续边界见[架构记录](agent-notes/implemented/architecture/2026-11-16-public-deployment-library.md)。
 
 ## 第一阶段：本地消费闭环
 
