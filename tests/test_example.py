@@ -68,11 +68,11 @@ class ExampleTests(unittest.TestCase):
             os.close(master)
 
     def assert_checks(self, output):
-        self.assertEqual(output.strip().splitlines()[-1], '部署：成功')
+        self.assertEqual(output.strip().splitlines()[-1], '全部成功完成')
         self.assertIn('步骤（1） [完成；通过]', output)
         self.assertIn('步骤（2） [完成；通过]', output)
         self.assertEqual(output.count('[完成；通过]'), 2)
-        self.assertIn('部署：成功', output)
+        self.assertIn('全部成功完成', output)
         stages = ('配置引导', '执行', '最终验收')
         for index, (stage, count) in enumerate(zip(stages, (2, 5, 2))):
             start = output.index('阶段：' + stage)

@@ -152,7 +152,7 @@ class RunnerTests(unittest.TestCase):
             disposition = f"执行 步骤（{unselected}） [未选择]"
             self.assertEqual(text.count(disposition), 1)
             self.assertLess(text.index(disposition), text.index("阶段：最终验收"))
-            self.assertEqual(text.strip().splitlines()[-1], "部署：成功")
+            self.assertEqual(text.strip().splitlines()[-1], "全部成功完成")
         self.assertEqual(trace, ["left", "left", "right"])
         first_steps = {step.declaration.id: step for step in first.steps}
         self.assertEqual(first_steps["left"].disposition, StepDisposition.EXECUTED)

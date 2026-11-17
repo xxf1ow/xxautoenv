@@ -137,4 +137,6 @@ class Terminal:
     def report(self, report: RunReport) -> None:
         """Publish outstanding dispositions, then the final deployment conclusion."""
         self._dispositions(report.steps)
-        self.stdout(f'\n部署：{_RUN_STATUS[report.status]}\n')
+        conclusion = ('全部成功完成' if report.status is RunStatus.SUCCESS
+                      else f'部署：{_RUN_STATUS[report.status]}')
+        self.stdout(f'\n{conclusion}\n')

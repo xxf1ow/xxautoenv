@@ -27,7 +27,7 @@ class WheelConsumerTests(unittest.TestCase):
             self.assertFalse(root.is_relative_to(ROOT))
             consumer = root / 'consumer'
             shutil.copytree(ROOT / 'example' / 'local-file', consumer,
-                            ignore=shutil.ignore_patterns('.venv', '__pycache__', '.tmp'))
+                            ignore=shutil.ignore_patterns('.venv', '__pycache__', '.tmp', '.ttt'))
             dependency = consumer / 'vendor'
             dependency.mkdir()
             shutil.copy2(WHEEL, dependency / WHEEL.name)
@@ -82,7 +82,7 @@ socket.getaddrinfo = blocked
 sys.argv = ['deploy.py', '--target-dir', sys.argv[1], '-y']
 runpy.run_path('deploy.py', run_name='__main__')
 ''', str(root / 'socket-blocked-target'))
-            self.assertIn('部署：成功', blocked.stdout)
+            self.assertIn('全部成功完成', blocked.stdout)
             self.assertEqual(blocked.stdout.count('[完成；通过]'), 2)
 
 

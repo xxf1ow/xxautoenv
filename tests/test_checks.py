@@ -52,7 +52,7 @@ class CheckTests(unittest.TestCase):
                 self.assertEqual(task.state, TaskState.COMPLETED)
                 self.assertEqual(report.steps[0].result.status, NodeStatus.SUCCESS)
                 self.assertIn('[完成；通过]' if verdict is CheckVerdict.PASSED else '[完成；不通过]', self.out.getvalue())
-                self.assertIn('部署：成功' if status is RunStatus.SUCCESS else '部署：失败', self.out.getvalue())
+                self.assertIn('全部成功完成' if status is RunStatus.SUCCESS else '部署：失败', self.out.getvalue())
 
     def test_ordinary_prepare_and_execute_errors_are_indeterminate_and_continue(self):
         for during_prepare in (True, False):

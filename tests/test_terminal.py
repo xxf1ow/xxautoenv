@@ -223,4 +223,4 @@ class TerminalTests(unittest.TestCase):
             run(spec, terminal=terminal)
             output = self.out.getvalue()
             self.assertNotIn('─', output.split('阶段：执行')[0])
-            self.assertEqual(output.strip().splitlines()[-1], '部署：成功')
+            self.assertEqual(output.strip().splitlines()[-1], '全部成功完成')
