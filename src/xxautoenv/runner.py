@@ -137,8 +137,8 @@ def run(spec: WorkflowSpec, *, auto_approve: bool = False,
     Each call rebinds interaction services and observes operations again. Ordinary
     node errors retain their exception and cause in diagnostics; KeyboardInterrupt
     returns INTERRUPTED, refusal returns CANCELLED, and SystemExit propagates.
-    Invalid declarations raise ContractError before execution. Concurrent runs
-    sharing one spec are unsupported.
+    Incomplete native execution returns FAILED. Invalid declarations raise
+    ContractError before execution. Concurrent runs sharing one spec are unsupported.
     """
     validate_workflow(spec)
     declarations = describe_workflow(spec)
@@ -156,6 +156,8 @@ def run(spec: WorkflowSpec, *, auto_approve: bool = False,
         status = RunStatus.SUCCESS
         try:
             workflow.run_all()
+            if not workflow.is_completed():
+                status = RunStatus.FAILED
         except _RunCancelled:
             status = RunStatus.CANCELLED
         except KeyboardInterrupt:

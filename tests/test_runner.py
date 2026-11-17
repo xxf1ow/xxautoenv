@@ -1,10 +1,10 @@
 import unittest
 
 from SpiffWorkflow.operators import Attrib, Equal
-from SpiffWorkflow.specs import ExclusiveChoice, WorkflowSpec
+from SpiffWorkflow.specs import ExclusiveChoice, Simple, WorkflowSpec
 
 from xxautoenv.contracts import (
-    Action, ActionScope, CheckResult, CheckVerdict, NodeResult, NodeStatus,
+    Action, ActionScope, CheckResult, CheckVerdict, ContractError, NodeResult, NodeStatus,
     Ref, RunStatus, Stage, StepDisposition,
 )
 from xxautoenv.nodes.function import action_node, function_node
@@ -258,6 +258,37 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as caught:
             run(self.spec, terminal=self.terminal)
         self.assertEqual(caught.exception.code, 17)
+
+    def test_manual_native_node_is_rejected_before_any_step_executes(self):
+        reached = []
+        source = self.node("source", lambda: reached.append("source"))
+        manual = Simple(self.spec, "manual", manual=True)
+        self.spec.start.connect(source)
+        source.connect(manual)
+        self.check(manual, function=lambda: reached.append("check"))
+        with self.assertRaises(ContractError):
+            run(self.spec, terminal=self.terminal)
+        self.assertEqual(reached, [])
+
+    def test_incomplete_native_workflow_cannot_report_success(self):
+        gate = Simple(self.spec, "gate")
+        check_calls = []
+
+        def pause_gate():
+            # A change after validation exercises the native completion guard.
+            gate.manual = True
+            return "observed"
+
+        source = self.node("source", pause_gate)
+        self.spec.start.connect(source)
+        source.connect(gate)
+        self.check(gate, function=lambda: check_calls.append(True))
+        report = run(self.spec, terminal=self.terminal)
+        self.assertEqual(report.status, RunStatus.FAILED)
+        self.assertEqual(report.exit_code, 1)
+        self.assertEqual(check_calls, [])
+        self.assertEqual(report.checks, ())
+        self.assertEqual(report.steps[-1].disposition, StepDisposition.NOT_EXECUTED)
 
     def test_not_passed_check_fails_run_after_all_checks_complete(self):
         first = self.node("first", lambda: CheckResult(CheckVerdict.NOT_PASSED, "Content mismatch"),

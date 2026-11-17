@@ -35,7 +35,8 @@ def describe_workflow(spec: WorkflowSpec) -> tuple[NodeDeclaration, ...]:
 def validate_workflow(spec: WorkflowSpec) -> None:
     """Validate every native route's inputs, stages, outputs, and final checks.
 
-    Only sequential connections and native ExclusiveChoice branches are supported.
+    Only automatic tasks with sequential connections or native ExclusiveChoice
+    branches are supported.
     A reference must have a producer on every route reaching its consumer. Final
     check nodes carry the internal ``_is_check`` marker set by their factory.
     ContractError rejects unsupported or invalid graphs before execution.
@@ -53,6 +54,8 @@ def validate_workflow(spec: WorkflowSpec) -> None:
             StartTask, Simple, ExclusiveChoice,
         ):
             raise ContractError(f"Node {node.name!r} has unsupported native type {type(node).__name__}")
+        if node.manual:
+            raise ContractError(f"Node {node.name!r} requires unsupported manual execution")
         if len(node.outputs) > 1 and not isinstance(node, ExclusiveChoice):
             raise ContractError(f"Node {node.name!r} has an unsupported parallel split")
         if isinstance(node, ExclusiveChoice) and node.default_task_spec is None:
