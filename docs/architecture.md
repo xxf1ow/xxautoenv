@@ -31,6 +31,6 @@ flowchart TD
 
 ## 消费与分发
 
-[本地示例](../example/local-file/README.md) 使用原生 `ExclusiveChoice` 选择交付或复用，两条路径提供同名 `FileArtifact`，再由内容、权限核查各自读取。来源由脚本位置确定，产品路径和选择策略都归消费者。文件操作重新核对审批前提，用同目录临时文件替换目标，不跟随目标符号链接。
+[本地示例](../example/local-file/README.md) 在配置阶段确定配置来源，在引导阶段校验并补齐参数、读取来源材料，再构造部署图。新建和补录由消费脚本保存。消费脚本把引导时使用的终端传给运行入口，终端统一按实际展示顺序编号并分隔阶段。运行器负责图内的动作审批和执行。原生 `ExclusiveChoice` 选择交付或复用，两条路径提供同名 `FileArtifact`，再由内容、权限核查各自读取。文件操作重新核对审批前提，用同目录临时文件替换目标，不跟随目标符号链接。
 
 setuptools 只从 `src/xxautoenv/` 构建公共 wheel，SpiffWorkflow 3.2.0 保持外部依赖。示例通过本地 wheel 安装，不使用 editable 或 workspace。当前验证范围见[验证指南](testing.md)，决策理由及后续边界见[架构记录](agent-notes/implemented/architecture/2026-11-16-public-deployment-library.md)。

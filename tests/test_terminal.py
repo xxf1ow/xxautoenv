@@ -211,7 +211,7 @@ class TerminalTests(unittest.TestCase):
         terminal = self.terminal('y\n')
         run(self.workflow(lambda: self.action([])), terminal=terminal)
         output = self.out.getvalue()
-        between = output[output.index('步骤（1） [完成]'):output.index('阶段：最终验收')]
+        between = output[output.index('步骤（1） [完成]'):output.index('阶段（2）：最终验收')]
         self.assertTrue(any(line.strip() and set(line.strip()) == {'─'}
                             for line in between.splitlines()), between)
 
@@ -223,5 +223,7 @@ class TerminalTests(unittest.TestCase):
             self.out.truncate()
             run(spec, terminal=terminal)
             output = self.out.getvalue()
-            self.assertNotIn('─', output.split('阶段：执行')[0])
+            first_stage = next(line.strip() for line in output.splitlines() if line.strip())
+            self.assertEqual(first_stage, '阶段（1）：执行')
+            self.assertIn('阶段（2）：最终验收', output)
             self.assertEqual(output.strip().splitlines()[-1], '全部成功完成')

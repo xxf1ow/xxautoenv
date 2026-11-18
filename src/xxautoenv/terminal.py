@@ -1,5 +1,6 @@
 """Read interactive answers and display deployment evidence on standard streams."""
 
+from collections.abc import Iterable
 import sys
 import traceback
 from typing import TextIO
@@ -35,67 +36,90 @@ class Terminal:
         self.stdin = sys.stdin if stdin is None else stdin
         self._stdout = sys.stdout if stdout is None else stdout
         self._stderr = sys.stderr if stderr is None else stderr
+        self._stage_number = 0
+        self._shown_stage: Stage | None = None
 
     def begin(self, declarations: tuple[NodeDeclaration, ...]) -> None:
         """Assign stable positions within each stage without repeating descriptions."""
         self._positions = {}
         self._published_dispositions = set()
+        if self._shown_stage is not None:
+            self._stage_number = 0
         self._shown_stage = None
         for stage in Stage:
             for position, declaration in enumerate((item for item in declarations if item.stage is stage), 1):
                 self._positions[declaration.id] = position
 
-    def _step(self, declaration: NodeDeclaration) -> str:
-        return f"步骤（{self._positions[declaration.id]}）"
+    @staticmethod
+    def _step(position: int) -> str:
+        return f"步骤（{position}）"
 
     def stage(self, stage: Stage, plan: tuple[PreparedStep, ...]) -> None:
         """Render preparation facts; rows do not authorize or schedule execution."""
-        table = Table(title=Text(f"阶段：{_STAGES[stage]}"), show_lines=False)
-        table.add_column("#", justify="right")
-        table.add_column("说明")
-        table.add_column("Allowed actions")
-        table.add_column("Status")
-        for position, item in enumerate(plan, 1):
+        rows = []
+        for item in plan:
             allowed = ", ".join(dict.fromkeys(scope.action for scope in item.scope))
             if not allowed:
                 allowed = ("pending" if item.status is PreparationStatus.PENDING
                            else "n/a" if item.status is PreparationStatus.NOT_SELECTED else "read-only")
-            table.add_row(str(position), Text(item.declaration.purpose), Text(allowed),
-                          Text(item.status.value))
+            rows.append((item.declaration.purpose, allowed, item.status.value))
+        self.stage_table(_STAGES[stage], rows)
+        self._shown_stage = stage
+
+    def stage_table(self, name: str, rows: Iterable[tuple[str, str, str]]) -> None:
+        """Number a stage and render rows of purpose, allowed actions, and status."""
+        self._stage_number += 1
+        table = Table(title=Text(f"阶段（{self._stage_number}）：{name}"), show_lines=False)
+        table.add_column("#", justify="right")
+        table.add_column("说明")
+        table.add_column("Allowed actions")
+        table.add_column("Status")
+        for position, (purpose, allowed, status) in enumerate(rows, 1):
+            table.add_row(str(position), Text(purpose), Text(allowed), Text(status))
         console = Console(file=self._stdout)
-        if self._shown_stage is not None:
+        if self._stage_number > 1:
             console.rule()
         console.print(table)
-        self._shown_stage = stage
 
     def before(self, declaration: NodeDeclaration, action: Action) -> None:
         """Display concrete action details once before the runner requests approval."""
         details = action.description != declaration.purpose
         if details or action.scope:
-            self.stdout(f"{self._step(declaration)} 动作：" + (action.description if details else "") + "\n")
+            step = self._step(self._positions[declaration.id])
+            self.stdout(f"{step} 动作：" + (action.description if details else "") + "\n")
         for scope in action.scope:
             self.stdout(f"  {scope.action}: {scope.target}\n")
 
     def finished(self, declaration: NodeDeclaration, result: NodeResult) -> None:
-        status = _NODE_STATUS[result.status]
+        verdict = None
         summary = result.summary
         show_summary = result.status not in (NodeStatus.SUCCESS, NodeStatus.SKIPPED)
         if isinstance(result.value, CheckResult):
-            status += "；" + _VERDICTS[result.value.verdict]
-            show_summary = show_summary or result.value.verdict is not CheckVerdict.PASSED
+            verdict = result.value.verdict
+            show_summary = show_summary or verdict is not CheckVerdict.PASSED
             if result.value.summary != summary:
                 summary = "\n  ".join(filter(None, (summary, result.value.summary)))
-        details = f" {summary}" if show_summary and summary else ""
-        self.stdout(f"{self._step(declaration)} [{status}]{details}\n")
+        self.step_result(self._positions[declaration.id], result.status,
+                         summary if show_summary else "", verdict=verdict)
+
+    def step_result(self, position: int, status: NodeStatus, summary: str = "",
+                    *, verdict: CheckVerdict | None = None) -> None:
+        """Display the result of a one-based step with an optional summary or check verdict."""
+        label = _NODE_STATUS[status]
+        if verdict is not None:
+            label += "；" + _VERDICTS[verdict]
+        details = f" {summary}" if summary else ""
+        self.stdout(f"{self._step(position)} [{label}]{details}\n")
 
     def failed(self, declaration: NodeDeclaration, error: BaseException, *,
                preparation_result: NodeResult | None = None) -> None:
         """Show one failure receipt; a preparation verdict does not imply execution."""
-        status = "中断" if isinstance(error, (KeyboardInterrupt, SystemExit)) else "失败"
+        position = self._positions[declaration.id]
         if preparation_result is not None:
-            self.stdout(f"{self._step(declaration)} [准备异常；无法判定] {preparation_result.summary}\n")
+            self.stdout(f"{self._step(position)} [准备异常；无法判定] {preparation_result.summary}\n")
         else:
-            self.stdout(f"{self._step(declaration)} [{status}]\n")
+            status = NodeStatus.INTERRUPTED if isinstance(error, (KeyboardInterrupt, SystemExit)) else NodeStatus.FAILED
+            self.step_result(position, status)
         traceback.print_exception(error, file=self._stderr)
         self._stderr.flush()
 
@@ -139,7 +163,7 @@ class Terminal:
         if declaration.id in self._published_dispositions:
             return
         prefix = '' if declaration.stage is self._shown_stage else f'{_STAGES[declaration.stage]} '
-        self.stdout(f'{prefix}{self._step(declaration)} [{_DISPOSITIONS[disposition]}]\n')
+        self.stdout(f'{prefix}{self._step(self._positions[declaration.id])} [{_DISPOSITIONS[disposition]}]\n')
         self._published_dispositions.add(declaration.id)
 
     def report(self, report: RunReport) -> None:
@@ -148,3 +172,5 @@ class Terminal:
         conclusion = ('全部成功完成' if report.status is RunStatus.SUCCESS
                       else f'部署：{_RUN_STATUS[report.status]}')
         self.stdout(f'\n{conclusion}\n')
+        self._stage_number = 0
+        self._shown_stage = None

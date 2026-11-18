@@ -151,7 +151,7 @@ class RunnerTests(unittest.TestCase):
         for text, unselected in ((first_output, 2), (output.getvalue(), 1)):
             disposition = f"步骤（{unselected}） [未选择]"
             self.assertEqual(text.count(disposition), 1)
-            self.assertLess(text.index(disposition), text.index("阶段：最终验收"))
+            self.assertLess(text.index(disposition), text.index("阶段（3）：最终验收"))
             self.assertEqual(text.strip().splitlines()[-1], "全部成功完成")
         self.assertEqual(trace, ["left", "left", "right"])
         first_steps = {step.declaration.id: step for step in first.steps}
@@ -208,7 +208,7 @@ class RunnerTests(unittest.TestCase):
         output = io.StringIO()
         report = run(self.spec, terminal=Terminal(stdout=output, stderr=output))
         rendered = output.getvalue()
-        before_failure = rendered.split("阶段：执行", 1)[1].split("Traceback", 1)[0]
+        before_failure = rendered.split("阶段（1）：执行", 1)[1].split("Traceback", 1)[0]
         self.assertIn("pending", before_failure)
         self.assertEqual([line for line in before_failure.splitlines() if "） [" in line], [
             "步骤（1） [完成]", "步骤（2） [未选择]", "步骤（3） [失败]",

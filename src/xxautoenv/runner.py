@@ -335,11 +335,13 @@ def main(
     *,
     argv: Sequence[str] | None = None,
     configure: Callable[[argparse.ArgumentParser], None] | None = None,
+    terminal: Terminal | None = None,
 ) -> int:
     """Parse shared -y and consumer arguments, build the native graph, and run.
 
-    Consumers register their own arguments through configure. Return 0 for
-    success, 1 for failure, 2 for refusal, or 130 for KeyboardInterrupt.
+    Consumers register their own arguments through configure. Pass the terminal
+    used in build to continue displaying stages on that terminal.
+    Return 0 for success, 1 for failure, 2 for refusal, or 130 for KeyboardInterrupt.
     ArgumentParser retains its standard help and invalid-argument exit behavior.
     Ordinary build/validation errors print their full traceback and return 1;
     SystemExit propagates.
@@ -351,7 +353,7 @@ def main(
         configure(parser)
     args = parser.parse_args(argv)
     try:
-        return run(build(args), auto_approve=args.auto_approve).exit_code
+        return run(build(args), auto_approve=args.auto_approve, terminal=terminal).exit_code
     except KeyboardInterrupt:
         traceback.print_exc(file=sys.stderr)
         return 130
