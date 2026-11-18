@@ -62,7 +62,7 @@ class WheelConsumerTests(unittest.TestCase):
             self.assertFalse(location.is_relative_to(ROOT))
             target = root / 'target'
             first = command(str(python), 'deploy.py', '--target-dir', str(target), '-y')
-            self.assertIn('步骤（4） [完成] 已交付文件', first.stdout)
+            self.assertIn('步骤（4） [完成]', first.stdout.splitlines())
             self.assertEqual((target / 'message.txt').read_text(), 'Hello from xxautoenv.\n')
             self.assertEqual((target / 'message.txt').stat().st_mode & 0o777, 0o644)
             second = command(str(python), 'deploy.py', '--target-dir', str(target))

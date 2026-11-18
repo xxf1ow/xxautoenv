@@ -143,13 +143,13 @@ class RunnerTests(unittest.TestCase):
         for _ in range(2):
             first = run(self.spec, terminal=terminal)
             first_output = output.getvalue()
-            self.assertEqual(first_output.count("执行 步骤（2） [未选择]"), 1)
+            self.assertEqual(first_output.count("步骤（2） [未选择]"), 1)
             output.seek(0)
             output.truncate()
         choice_value[0] = "right"
         second = run(self.spec, terminal=terminal)
         for text, unselected in ((first_output, 2), (output.getvalue(), 1)):
-            disposition = f"执行 步骤（{unselected}） [未选择]"
+            disposition = f"步骤（{unselected}） [未选择]"
             self.assertEqual(text.count(disposition), 1)
             self.assertLess(text.index(disposition), text.index("阶段：最终验收"))
             self.assertEqual(text.strip().splitlines()[-1], "全部成功完成")
@@ -191,18 +191,33 @@ class RunnerTests(unittest.TestCase):
         def fail():
             raise ValueError("Selected action failed")
 
+        source = action_node(
+            self.spec, "route", name="route", purpose="Resolve the route at execution",
+            stage=Stage.EXECUTION, inputs={}, output="route", allows=lambda scope: False,
+            prepare=lambda: Action("Resolve the route at execution", (),
+                                   lambda: NodeResult(NodeStatus.SUCCESS, "selected", "Route selected")),
+        )
         choice = ExclusiveChoice(self.spec, "choice")
         selected = self.node("selected", fail)
-        unselected = self.node("unselected", lambda: 2)
-        self.spec.start.connect(choice)
+        unselected = self.node("unselected", lambda: self.fail("Unselected callback ran"))
+        self.spec.start.connect(source)
+        source.connect(choice)
+        choice.connect_if(Equal(Attrib("route"), "unselected"), unselected)
         choice.connect(selected)
-        choice.connect_if(Equal(1, 2), unselected)
         self.check(selected, unselected)
         output = io.StringIO()
         report = run(self.spec, terminal=Terminal(stdout=output, stderr=output))
-        self.assertEqual(output.getvalue().strip().splitlines()[-1], "部署：失败")
-        for line in ("执行 步骤（2） [未选择]", "最终验收 步骤（1） [未执行]"):
-            self.assertEqual(output.getvalue().count(line), 1)
+        rendered = output.getvalue()
+        before_failure = rendered.split("阶段：执行", 1)[1].split("Traceback", 1)[0]
+        self.assertIn("pending", before_failure)
+        self.assertEqual([line for line in before_failure.splitlines() if "） [" in line], [
+            "步骤（1） [完成]", "步骤（2） [未选择]", "步骤（3） [失败]",
+        ])
+        self.assertEqual(rendered.count("步骤（2） [未选择]"), 1)
+        self.assertEqual(rendered.count("步骤（3） [失败]"), 1)
+        self.assertEqual(rendered.count("最终验收 步骤（1） [未执行]"), 1)
+        self.assertIn("Selected action failed", rendered)
+        self.assertEqual(rendered.strip().splitlines()[-1], "部署：失败")
         steps = {step.declaration.id: step for step in report.steps}
         self.assertEqual(steps["selected"].disposition, StepDisposition.EXECUTED)
         self.assertEqual(steps["unselected"].disposition, StepDisposition.NOT_SELECTED)
@@ -270,6 +285,7 @@ class RunnerTests(unittest.TestCase):
         self.check(node, function=lambda: reached.append(True))
         output = io.StringIO()
         report = run(self.spec, terminal=Terminal(stdout=output, stderr=output))
+        self.assertEqual(output.getvalue().count("步骤（1） [中断]"), 1)
         self.assertEqual(output.getvalue().count("最终验收 步骤（1） [未执行]"), 1)
         self.assertEqual(output.getvalue().strip().splitlines()[-1], "部署：中断")
         self.assertEqual(report.status, RunStatus.INTERRUPTED)

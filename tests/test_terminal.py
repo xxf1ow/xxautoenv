@@ -54,8 +54,10 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(reached, ['target'])
         output = self.out.getvalue()
         for text in ('执行', '最终验收', 'Deliver selected material',
-                     'Write target.txt', 'target.txt', '完成', 'Delivered', 'Verified'):
+                     'Write target.txt', 'target.txt', '步骤（1） [完成]', '步骤（1） [完成；通过]'):
             self.assertIn(text, output)
+        self.assertEqual(report.steps[0].result, NodeResult(NodeStatus.SUCCESS, 'target', 'Delivered'))
+        self.assertEqual(report.checks, (CheckResult(CheckVerdict.PASSED, 'Verified'),))
         self.assertEqual(output.count('[y/N]'), 1)
         self.assertEqual(self.err.getvalue(), '')
 
@@ -78,9 +80,8 @@ class TerminalTests(unittest.TestCase):
                 self.assertEqual(report.status, RunStatus.SUCCESS)
                 self.assertNotIn('[y/N]', self.out.getvalue())
                 if skipped:
-                    self.assertIn('Already present', self.out.getvalue())
-                    self.assertIn('步骤（1）', self.out.getvalue())
-                    self.assertIn('跳过', self.out.getvalue())
+                    self.assertIn('步骤（1） [跳过]', self.out.getvalue().splitlines())
+                    self.assertIs(report.steps[0].result, prepared)
 
     def test_auto_approval_displays_action_without_reading_confirmation(self):
         reached = []
@@ -198,8 +199,8 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(output.count('[bold]用户说明[/bold]'), 1)
         self.assertNotIn('Install material', output)
         self.assertEqual(output.count('Write target.txt'), 1)
-        self.assertEqual(output.count('Delivered'), 1)
-        self.assertEqual(output.count('Verified'), 1)
+        self.assertEqual(output.count('步骤（1） [完成]\n'), 1)
+        self.assertEqual(output.splitlines().count('步骤（1） [完成；通过]'), 1)
         self.assertIn('Allowed actions', output)
         header = next(line for line in output.splitlines() if 'Allowed actions' in line)
         self.assertEqual([cell.strip() for cell in header.split('┃')][1:-1], ['#', '说明', 'Allowed actions', 'Status'])
@@ -210,7 +211,7 @@ class TerminalTests(unittest.TestCase):
         terminal = self.terminal('y\n')
         run(self.workflow(lambda: self.action([])), terminal=terminal)
         output = self.out.getvalue()
-        between = output[output.index('Delivered'):output.index('阶段：最终验收')]
+        between = output[output.index('步骤（1） [完成]'):output.index('阶段：最终验收')]
         self.assertTrue(any(line.strip() and set(line.strip()) == {'─'}
                             for line in between.splitlines()), between)
 

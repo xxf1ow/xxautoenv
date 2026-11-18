@@ -40,7 +40,7 @@ class Terminal:
         """Assign stable positions within each stage without repeating descriptions."""
         self._positions = {}
         self._published_dispositions = set()
-        self._stage_shown = False
+        self._shown_stage = None
         for stage in Stage:
             for position, declaration in enumerate((item for item in declarations if item.stage is stage), 1):
                 self._positions[declaration.id] = position
@@ -63,10 +63,10 @@ class Terminal:
             table.add_row(str(position), Text(item.declaration.purpose), Text(allowed),
                           Text(item.status.value))
         console = Console(file=self._stdout)
-        if self._stage_shown:
+        if self._shown_stage is not None:
             console.rule()
         console.print(table)
-        self._stage_shown = True
+        self._shown_stage = stage
 
     def before(self, declaration: NodeDeclaration, action: Action) -> None:
         """Display concrete action details once before the runner requests approval."""
@@ -79,11 +79,14 @@ class Terminal:
     def finished(self, declaration: NodeDeclaration, result: NodeResult) -> None:
         status = _NODE_STATUS[result.status]
         summary = result.summary
+        show_summary = result.status not in (NodeStatus.SUCCESS, NodeStatus.SKIPPED)
         if isinstance(result.value, CheckResult):
             status += "；" + _VERDICTS[result.value.verdict]
+            show_summary = show_summary or result.value.verdict is not CheckVerdict.PASSED
             if result.value.summary != summary:
-                summary += "\n  " + result.value.summary
-        self.stdout(f"{self._step(declaration)} [{status}] {summary}\n")
+                summary = "\n  ".join(filter(None, (summary, result.value.summary)))
+        details = f" {summary}" if show_summary and summary else ""
+        self.stdout(f"{self._step(declaration)} [{status}]{details}\n")
 
     def failed(self, declaration: NodeDeclaration, error: BaseException, *,
                preparation_result: NodeResult | None = None) -> None:
@@ -129,10 +132,15 @@ class Terminal:
 
     def _dispositions(self, steps: tuple[StepReport, ...]) -> None:
         for step in steps:
-            if (step.disposition is not StepDisposition.EXECUTED
-                    and step.declaration.id not in self._published_dispositions):
-                self.stdout(f'{_STAGES[step.declaration.stage]} {self._step(step.declaration)} [{_DISPOSITIONS[step.disposition]}]\n')
-                self._published_dispositions.add(step.declaration.id)
+            if step.disposition is not StepDisposition.EXECUTED:
+                self._disposition(step.declaration, step.disposition)
+
+    def _disposition(self, declaration: NodeDeclaration, disposition: StepDisposition) -> None:
+        if declaration.id in self._published_dispositions:
+            return
+        prefix = '' if declaration.stage is self._shown_stage else f'{_STAGES[declaration.stage]} '
+        self.stdout(f'{prefix}{self._step(declaration)} [{_DISPOSITIONS[disposition]}]\n')
+        self._published_dispositions.add(declaration.id)
 
     def report(self, report: RunReport) -> None:
         """Publish outstanding dispositions, then the final deployment conclusion."""

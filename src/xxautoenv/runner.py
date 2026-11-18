@@ -56,7 +56,7 @@ class _Services:
         if self.preparing:
             self.receipts.append((self.current_task.id, "finished"))
         else:
-            self.terminal.finished(declaration, result)
+            self._finish(self.current_task, result)
 
     def failed(self, declaration, error):
         state = self.current_task.internal_data.get("xxautoenv", {})
@@ -67,6 +67,30 @@ class _Services:
         else:
             self._failure(self.current_task, error)
 
+    def _show_unselected_before(self, task):
+        """Publish resolved lower-numbered dispositions before a result receipt."""
+        publish = getattr(self.terminal, "_disposition", None)
+        if publish is None:
+            return
+        declaration = task.task_spec.declaration
+        earlier = []
+        for candidate in self.declarations:
+            if candidate.id == declaration.id:
+                break
+            if candidate.stage is declaration.stage:
+                earlier.append(candidate)
+        if not earlier:
+            return
+        workflow = task.workflow
+        dispositions = _unexecuted_dispositions(workflow)
+        for candidate in earlier:
+            if dispositions[workflow.spec.task_specs[candidate.id]] is StepDisposition.NOT_SELECTED:
+                publish(candidate, StepDisposition.NOT_SELECTED)
+
+    def _finish(self, task, result):
+        self._show_unselected_before(task)
+        self.terminal.finished(task.task_spec.declaration, result)
+
     def _failure(self, task, error):
         state = task.internal_data.get("xxautoenv", {})
         result = state.get("result", state.get("prepared"))
@@ -75,6 +99,7 @@ class _Services:
         if completed_check:
             self.terminal.stderr("".join(traceback.format_exception(error)))
         else:
+            self._show_unselected_before(task)
             self.terminal.failed(task.task_spec.declaration, error)
 
     def flush(self, workflow):
@@ -93,7 +118,7 @@ class _Services:
             elif kind == "before":
                 self.terminal.before(declaration, state["action"])
             else:
-                self.terminal.finished(declaration, state["result"])
+                self._finish(task, state["result"])
 
     def plan(self, workflow):
         """Prepare definite native tasks with known inputs without advancing them."""

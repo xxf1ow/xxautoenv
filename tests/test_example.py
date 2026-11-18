@@ -81,12 +81,12 @@ class ExampleTests(unittest.TestCase):
             for position in range(1, count + 1):
                 self.assertEqual(receipts.count(f'步骤（{position}） ['), 1, receipts)
 
-    def assert_stage_closure(self, output, disposition, receipt):
-        self.assertEqual(output.count(disposition), 1)
-        self.assertLess(output.index(receipt), output.index(disposition))
-        self.assertLess(output.index(disposition), output.index('阶段：最终验收'))
+    def execution_receipts(self, output):
+        execution = output.split('阶段：执行', 1)[1].split('阶段：最终验收', 1)[0]
+        return [line for line in execution.splitlines() if '步骤（' in line and '） [' in line]
 
     def assert_english_columns(self, output):
+        self.assertNotIn('汇合', output)
         headers = [line for line in output.splitlines() if 'Allowed actions' in line]
         self.assertEqual(len(headers), 3)
         for line in headers:
@@ -104,19 +104,23 @@ class ExampleTests(unittest.TestCase):
         installed = self.target / 'message.txt'
         self.assertEqual(installed.read_text(), 'Hello from xxautoenv.\n')
         self.assertEqual(installed.stat().st_mode & 0o777, 0o644)
-        self.assertIn('步骤（4） [完成] 已交付文件', first.stdout)
-        self.assert_stage_closure(first.stdout, '执行 步骤（5） [未选择]', '步骤（4） [完成]')
+        with self.subTest(run='first delivery'):
+            self.assertEqual(self.execution_receipts(first.stdout), [
+                '步骤（1） [完成]', '步骤（2） [完成]', '步骤（3） [完成]',
+                '步骤（4） [完成]', '步骤（5） [未选择]',
+            ])
         self.assert_checks(first.stdout)
         self.assert_english_columns(first.stdout)
         before = installed.stat().st_mtime_ns
         second = self.execute('--target-dir', str(self.target))
         self.assertEqual(second.returncode, 0, second.stderr)
-        self.assertIn('步骤（5） [跳过]', second.stdout)
-        self.assertIn('执行 步骤（4） [未选择]', second.stdout)
+        self.assertEqual(self.execution_receipts(second.stdout), [
+            '步骤（1） [完成]', '步骤（2） [完成]', '步骤（3） [未选择]',
+            '步骤（4） [未选择]', '步骤（5） [跳过]',
+        ])
         self.assertNotIn('[y/N]', second.stdout)
         self.assertEqual(installed.stat().st_mtime_ns, before)
         self.assert_checks(second.stdout)
-        self.assert_stage_closure(second.stdout, '执行 步骤（4） [未选择]', '步骤（5） [跳过]')
         self.assert_english_columns(second.stdout)
 
     def test_content_or_permission_changes_require_delivery(self):
@@ -128,7 +132,7 @@ class ExampleTests(unittest.TestCase):
                 installed.chmod(mode)
                 result = self.execute('--target-dir', str(self.target), '-y')
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn('步骤（4） [完成] 已交付文件', result.stdout)
+                self.assertIn('步骤（4） [完成]\n', result.stdout)
                 self.assertEqual(installed.read_text(), 'Hello from xxautoenv.\n')
                 self.assertEqual(installed.stat().st_mode & 0o777, 0o644)
                 self.assert_checks(result.stdout)
@@ -138,8 +142,8 @@ class ExampleTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         for stage in ('配置引导', '执行', '最终验收'):
             self.assertIn('阶段：' + stage, output)
-        self.assertIn('步骤（1） [完成] 配置已接受', output)
-        self.assertIn('步骤（4） [完成] 已交付文件', output)
+        self.assertIn('步骤（1） [完成]', output.splitlines())
+        self.assertIn('步骤（4） [完成]', output.splitlines())
         self.assert_checks(output)
 
     def test_terminal_refusal_preserves_existing_file(self):
@@ -151,12 +155,12 @@ class ExampleTests(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertEqual(installed.read_text(), 'Keep this\n')
         self.assertEqual(installed.stat().st_mode & 0o777, 0o600)
-        self.assertIn('步骤（4） [取消]', output)
+        self.assertEqual(output.count('步骤（4） [取消]'), 1)
         self.assertIn('部署：取消', output)
         self.assertIn('最终验收 步骤（1） [未执行]', output)
         self.assertIn('最终验收 步骤（2） [未执行]', output)
         self.assertEqual(output.strip().splitlines()[-1], '部署：取消')
-        for disposition in ('执行 步骤（5） [未选择]', '最终验收 步骤（1） [未执行]',
+        for disposition in ('步骤（5） [未选择]', '最终验收 步骤（1） [未执行]',
                             '最终验收 步骤（2） [未执行]'):
             self.assertEqual(output.count(disposition), 1)
             self.assertLess(output.index(disposition), output.index('部署：取消'))
@@ -195,10 +199,10 @@ class ExampleTests(unittest.TestCase):
         self.assertEqual(report.status, RunStatus.FAILED)
         self.assertEqual([check.verdict for check in report.checks],
                          [CheckVerdict.NOT_PASSED, CheckVerdict.PASSED])
-        self.assertIn('步骤（1） [完成；不通过]', output.getvalue())
-        self.assertIn('[完成；不通过]', output.getvalue())
-        self.assertIn('步骤（2） [完成；通过]', output.getvalue())
-        self.assertIn('部署：失败', output.getvalue())
+        self.assertIn(f'步骤（1） [完成；不通过] 内容摘要不匹配：{target / "message.txt"}', output.getvalue())
+        self.assertEqual(output.getvalue().count('步骤（1） [完成；不通过]'), 1)
+        self.assertIn('步骤（2） [完成；通过]', output.getvalue().splitlines())
+        self.assertEqual(output.getvalue().strip().splitlines()[-1], '部署：失败')
 
 
 if __name__ == '__main__':

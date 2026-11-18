@@ -92,7 +92,7 @@ dependencies = [
     { name = "spiffworkflow" },
 ]
 wheels = [
-    { filename = "xxautoenv-0.1.0-py3-none-any.whl", hash = "sha256:c69c5ea2f5b1c2168cb9848a7eef702e0d47f528b2eacf2ec65775ac156d4c17" },
+    { filename = "xxautoenv-0.1.0-py3-none-any.whl", hash = "sha256:a7cc665ffff4f58962473fb6d18b1bc6d14af4e32914adedda0691bdd64aacad" },
 ]
 
 [package.metadata]

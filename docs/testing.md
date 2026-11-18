@@ -11,7 +11,7 @@ uv run --locked python -m unittest tests.test_preparation tests.test_node -v
 uv run --locked python -m unittest tests.test_example -v
 ```
 
-示例测试实际执行部署脚本，覆盖首次交付、重跑复用、内容及权限变化、拒绝保留文件和独立核查继续。标准库 pty 驱动真实终端输入、审批和拒绝，检查阶段、步骤及结论，包括英文列、阶段分割线、未选择条目在阶段内仅显示一次，以及全局结论最后输出。
+示例测试实际执行部署脚本，覆盖首次交付、重跑复用、内容及权限变化、拒绝保留文件和独立核查继续。标准库 pty 驱动真实终端输入、审批和拒绝。测试检查四列表、阶段分割线、交付和复用的精确结果行、晚确定路由的未选择项、非通过核查原因及最后一行的全局结论。
 
 先按[开发指南](development.md#构建与独立消费)构建 wheel，再执行：
 
