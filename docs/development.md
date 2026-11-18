@@ -1,6 +1,8 @@
 # 开发指南
 
-本仓库面向公共部署能力的维护者。当前包含文档和文档检查脚本，产品源码、包元数据及实施计划尚未建立。
+本仓库面向公共部署能力的维护者。公共 Python 包位于 `src/xxautoenv/`，使用 Python 3.12、uv 和 setuptools。
+
+架构决策见[公共部署节点与交互运行入口](agent-notes/implemented/architecture/2026-11-16-public-deployment-library.md)。
 
 ## 项目范围
 
@@ -10,11 +12,10 @@
 
 | 文档 | 负责内容 |
 |---|---|
-| README.md | 项目定位、当前可用性及文档入口 |
 | docs/development.md | 开发流程和文档归属 |
 | docs/testing.md | 可执行验证命令及证据边界 |
 | docs/roadmap.md | 阶段目标及后续范围 |
-| docs/architecture.md | 实现建立后记录当前架构 |
+| docs/architecture.md | 当前组成、运行过程与模块依赖 |
 | docs/agent-notes/ | 正式设计、长期决策理由及生命周期 |
 | .superpowers/ | 不提交的交接材料、计划和临时探针 |
 
@@ -26,4 +27,24 @@
 
 文档使用相对 Markdown 链接，一段正文占一个物理行。文档预算在 `scripts/doc-budgets.manifest.json` 中维护，预算是上限而非缩写目标。
 
-验证命令统一由[验证指南](testing.md)维护。产品依赖安装、构建及测试命令在相应能力实现并实际验证后补充，不在初始化时提供不可运行的示例。
+## 开发环境
+
+安装 uv 后，在仓库根目录同步锁定的依赖和本地包：
+
+```bash
+uv sync --locked
+```
+
+`.python-version` 选择 Python 3.12，`uv.lock` 锁定 SpiffWorkflow 3.2.0 和 Rich 15.0.0。修改依赖声明后先运行 `uv lock`，再运行 `uv sync --locked`。首次准备环境需要取得 Python 和依赖；准备完成后的节点测试无需联网。
+
+## 构建与独立消费
+
+在仓库根目录构建 wheel：
+
+```bash
+uv build --wheel
+```
+
+产物为 `dist/xxautoenv-0.1.0-py3-none-any.whl`。构建依赖准备齐全时可设置 `UV_OFFLINE=1`；wheel 只包含公共包、dist-info 与许可元数据。构建后按[示例说明](../example/local-file/README.md)更新真实锁文件并同步独立消费环境，不能以开发环境的 editable 安装代替消费验证。
+
+验证命令统一由[验证指南](testing.md)维护。
